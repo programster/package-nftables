@@ -1,0 +1,26 @@
+{
+    "name": "programster/nftables",
+    "type": "library",
+    "description": "A package to make it eaier to generate nftables JSON.",
+    "keywords": ["nftables"],
+    "homepage": "https://github.com/programster/package-nftables",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Stuart Page",
+            "email": "sdpagent@gmail.com",
+            "homepage": "https://blog.programster.org",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": ">=8.2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Programster\\Nftables\\": "src/",
+            "Programster\\Nftables\\Exceptions\\": "src/exceptions/",
+            "Programster\\Nftables\\Enums\\": "src/enums/"
+        }
+    }
+}
