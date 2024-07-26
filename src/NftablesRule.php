@@ -8,28 +8,32 @@ use Programster\Nftables\Enums\NftablesFamily;
 
 readonly class NftablesRule implements JsonSerializable
 {
-    private NftablesChain $m_chain;
-    private array $m_expressions;
-
-
-
-    public function __construct(NftablesChain $chain, array $expressions)
+    public function __construct(
+        private NftablesChain $chain,
+        private array $expressions,
+        private ?string $comment = null
+    )
     {
-        $this->m_chain = $chain;
-        $this->m_expressions = $expressions;
     }
 
 
     public function toArray() : array
     {
-        return [
+        $arrayForm = [
             "rule" => [
-                "family" => $this->m_chain->getTable()->getFamily()->value,
-                "table" => $this->m_chain->getTable()->getName(),
-                "chain" => $this->m_chain->getName(),
-                "expr" => $this->m_expressions,
+                "family" => $this->chain->getTable()->getFamily()->value,
+                "table" => $this->chain->getTable()->getName(),
+                "chain" => $this->chain->getName(),
+                "expr" => $this->expressions,
             ]
         ];
+
+        if ($this->comment !== null)
+        {
+            $arrayForm["rule"]["comment"] = $this->comment;
+        }
+
+        return $arrayForm;
     }
 
 
@@ -40,7 +44,7 @@ readonly class NftablesRule implements JsonSerializable
 
 
     # Accessors
-    public function getTable() : NftablesTable { return $this->m_chain->getTable(); }
-    public function getChain() : NftablesChain { return $this->m_chain; }
-    public function getFamily() : NftablesFamily { return $this->m_chain->getTable()->getFamily(); }
+    public function getTable() : NftablesTable { return $this->chain->getTable(); }
+    public function getChain() : NftablesChain { return $this->chain; }
+    public function getFamily() : NftablesFamily { return $this->chain->getTable()->getFamily(); }
 }
