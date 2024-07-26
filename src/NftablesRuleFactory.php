@@ -113,7 +113,6 @@ readonly class NftablesRuleFactory
         ?string               $sourceIpOrCidr = null,
         ?NftablesConnectionStateCollection $allowedStates = null,
         ?string               $comment = null,
-
     ) : NftablesRule
     {
         if ($inputFilterChain->getType() !== NftablesChainType::FILTER)
