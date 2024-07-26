@@ -10,6 +10,15 @@ use Programster\Nftables\Exceptions\ExceptionUnsuitableChain;
 readonly class NftablesRuleFactory
 {
     /**
+     * Private constructor as this class is not meant to be instantiated.
+     */
+    private function __construct()
+    {
+
+    }
+
+
+    /**
      * Create a masquerade rule, that will cause nftables to mangle the packets that go out
      * so that they appear to come from this server, rather than where they originally came
      * from.
@@ -20,7 +29,8 @@ readonly class NftablesRuleFactory
      */
     public static function createMasquerade(
         NftablesChain $postRoutingChain,
-        string $outputInterfaceName
+        string $outputInterfaceName,
+        ?string $comment = null,
     ) : NftablesRule
     {
         if ($postRoutingChain->getHook() !== NftablesChainHook::POSTROUTING)
@@ -33,18 +43,22 @@ readonly class NftablesRuleFactory
             [ "masquerade" => null ]
         ];
 
-        return new NftablesRule($postRoutingChain, $expressions);
+        return new NftablesRule($postRoutingChain, $expressions, $comment);
     }
 
 
     /**
-     * Create a port forwarding rule.
+     * Create a NAT rule for port forwarding. This is the rule that performs the network address translation (NAT)
+     * mangling of the packets, so that their destination is changed to the other IP address, and possibly a different
+     * port. Depending in how your forwarding chain is setup (e.g. if you don't have an accept policy on your forwarding
+     * chain), then you may need to run createPortForwardForwardingRule as well to add forwarding rules.
      * @param NftablesChain $preroutingChain - specify the chain that we are going to add this rule to.
-     * @param string $incomingInterfaceName - specify the name of the interface to accept the traffic on for forwarding.
+     * @param string $inputInterfaceName - specify the name of the interface to accept the traffic on for forwarding.
      * This is typically the WAN interface.
-     * @param int $incomingPortNumber - specify the port we are expected to listen out for for traffic to be forwarded.
-     * @param string $internalServerIp - specify the IP of the internal server the traffic should be forwarded to.
-     * @param int $internalServerPort - specify the internal port the traffic should be forwarded to.
+     * @param int $inputPort - specify the port we are expected to listen out for for traffic to be forwarded.
+     * @param string $newDestIp - specify the IP address you wish the packets to go to next. When setting up a NAT, this
+     * will typically be the internal/private IP of  your internal server that you wish to forward traffic onto.
+     * @param int $newDestPort - specify the port the traffic should be forwarded to.
      * @param Protocol $protocol - specify whether the traffic should be TCP/UDP.
      * @param string|null $sourceIpCidr - optionally provide an IP or CIDR for where the traffice must be coming from
      * for it to be matched against in order to be forwarded.
@@ -52,25 +66,31 @@ readonly class NftablesRuleFactory
      * @throws ExceptionUnsuitableChain
      * @throws Exceptions\ExceptionPortRequired
      */
-    public static function createPortForward(
+    public static function createPortForwardNatRule(
         NftablesChain $preroutingChain,
-        string   $incomingInterfaceName,
-        int      $incomingPortNumber,
-        string   $internalServerIp,
-        int      $internalServerPort,
-        Protocol $protocol = Protocol::TCP,
-        ?string  $sourceIpCidr = null,
+        string        $inputInterfaceName,
+        int           $inputPort,
+        string        $newDestIp,
+        int           $newDestPort,
+        Protocol      $protocol = Protocol::TCP,
+        ?string       $sourceIpCidr = null,
+        ?string       $comment = null,
     ) : NftablesRule
     {
         // not sure if should allow the forwarding hook too.
-        if (in_array($preroutingChain->getHook()->value, ["prerouting"]) === false)
+        if ($preroutingChain->getHook() !== NftablesChainHook::PREROUTING)
         {
-            throw new ExceptionUnsuitableChain("Port forwarding rule must be applied to a chain that uses the prerouting hook.");
+            throw new ExceptionUnsuitableChain("The chain used for an NAT port rule needs to use the PREROUTING hook.");
+        }
+
+        if ($preroutingChain->getType() !== NftablesChainType::NAT)
+        {
+            throw new Exception("The chain used for an NAT port rule needs to use the NAT type.");
         }
 
         $matches = [
-            NftablesMatchFactory::createMatchInputInterfaceName($incomingInterfaceName),
-            NftablesMatchFactory::createMatchDestinationPorts($protocol, $incomingPortNumber),
+            NftablesMatchFactory::createMatchInputInterfaceName($inputInterfaceName),
+            NftablesMatchFactory::createMatchDestinationPorts($protocol, $inputPort),
         ];
 
         if ($sourceIpCidr !== null)
@@ -80,10 +100,10 @@ readonly class NftablesRuleFactory
 
         $expressions = [
             ...$matches,
-            NftablesLib::createDnat($internalServerIp, $internalServerPort)
+            NftablesLib::createDnat($newDestIp, $newDestPort)
         ];
 
-        return new NftablesRule($preroutingChain, $expressions);
+        return new NftablesRule($preroutingChain, $expressions, $comment);
     }
 
 
@@ -181,7 +201,8 @@ readonly class NftablesRuleFactory
     public static function createAcceptNetworkInterfaceInput(
         string $interfaceName,
         NftablesChain $inputChain,
-        ?NftablesConnectionStateCollection $allowedStates = null
+        ?NftablesConnectionStateCollection $allowedStates = null,
+        ?string $comment = null,
     ) : NftablesRule
     {
         if ($inputChain->getType() !== NftablesChainType::FILTER)
@@ -204,6 +225,6 @@ readonly class NftablesRuleFactory
         }
 
         $expressions[] = ["accept" => null];
-        return new NftablesRule($inputChain, $expressions);
+        return new NftablesRule($inputChain, $expressions, $comment);
     }
 }
