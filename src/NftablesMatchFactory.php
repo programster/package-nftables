@@ -1,13 +1,14 @@
 <?php
 
 /*
- * A library for creating matches for rules
+ * A factory for creating NftablesMatch objects
  */
 
 namespace Programster\Nftables;
 
 
 use Programster\Nftables\Enums\NftablesConnectionState;
+use Programster\Nftables\Enums\NftablesMatchOperator;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Exceptions\ExceptionConnectionStateRequired;
 use Programster\Nftables\Exceptions\ExceptionPortRequired;
@@ -22,7 +23,7 @@ readonly class NftablesMatchFactory
      * @return array[]
      * @throws ExceptionPortRequired
      */
-    public static function createMatchDestinationPorts(Protocol $protocol, int ...$ports) : array
+    public static function createMatchDestinationPorts(Protocol $protocol, int ...$ports) : NftablesMatch
     {
         $ports = array_unique($ports);
 
@@ -31,40 +32,25 @@ readonly class NftablesMatchFactory
             throw new ExceptionPortRequired();
         }
 
+        $left = [
+            "payload" => [
+                "protocol" => $protocol->value,
+                "field" => "dport"
+            ]
+        ];
+
         if (count($ports) === 1)
         {
-            $match = [
-                "match" => [
-                    "op" => "==",
-                    "left" => [
-                        "payload" => [
-                            "protocol" => $protocol->value,
-                            "field" => "dport"
-                        ]
-                    ],
-                    "right" => array_pop($ports)
-                ]
-            ];
+            $right = array_pop($ports);
         }
         else
         {
-            $match = [
-                "match" => [
-                    "op" => "==",
-                    "left" => [
-                        "payload" => [
-                            "protocol" => $protocol->value,
-                            "field" => "dport"
-                        ]
-                    ],
-                    "right" => [
-                        "set" => $ports
-                    ]
-                ]
+            $right = [
+                "set" => $ports
             ];
         }
 
-        return $match;
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $right);
     }
 
 
@@ -74,25 +60,23 @@ readonly class NftablesMatchFactory
      * @param PortRange $portRange - the range of ports to match against.
      * @return array[]
      */
-    public static function createMatchDestinationPortRange(Protocol $protocol, PortRange $portRange) : array
+    public static function createMatchDestinationPortRange(Protocol $protocol, PortRange $portRange) : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "payload" => [
-                        "protocol" => $protocol->value,
-                        "field" => "dport"
-                    ]
-                ],
-                "right" => [
-                    "range" => [
-                        $portRange->minPort,
-                        $portRange->maxPort,
-                    ]
-                ]
+        $left = [
+            "payload" => [
+                "protocol" => $protocol->value,
+                "field" => "dport"
             ]
         ];
+
+        $right = [
+            "range" => [
+                $portRange->minPort,
+                $portRange->maxPort,
+            ]
+        ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $right);
     }
 
 
@@ -101,19 +85,15 @@ readonly class NftablesMatchFactory
      * @param string $inputInterfaceName
      * @return array[]
      */
-    public static function createMatchInputInterfaceName(string $inputInterfaceName) : array
+    public static function createMatchInputInterfaceName(string $inputInterfaceName) : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "meta" => [
-                        "key" => "iifname"
-                    ]
-                ],
-                "right" => $inputInterfaceName
+        $left = [
+            "meta" => [
+                "key" => "iifname"
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $inputInterfaceName);
     }
 
 
@@ -122,19 +102,15 @@ readonly class NftablesMatchFactory
      * @param string $outputInterfaceName
      * @return array[]
      */
-    public static function createMatchOutputInterfaceName(string $outputInterfaceName) : array
+    public static function createMatchOutputInterfaceName(string $outputInterfaceName) : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "meta" => [
-                        "key" => "oifname"
-                    ]
-                ],
-                "right" => $outputInterfaceName
+        $left = [
+            "meta" => [
+                "key" => "oifname"
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $outputInterfaceName);
     }
 
 
@@ -143,20 +119,16 @@ readonly class NftablesMatchFactory
      * @param string $ipAddress
      * @return array[]
      */
-    public static function createMatchDestinationIpOrCidr(string $ipAddress) : array
+    public static function createMatchDestinationIpOrCidr(string $ipAddress) : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "payload" => [
-                        "protocol" => "ip",
-                        "field" => "daddr"
-                    ]
-                ],
-                "right" => $ipAddress
+        $left = [
+            "payload" => [
+                "protocol" => "ip",
+                "field" => "daddr"
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $ipAddress);
     }
 
 
@@ -165,20 +137,16 @@ readonly class NftablesMatchFactory
      * @param string $ipAddress
      * @return array[]
      */
-    public static function createMatchSourceIpOrCidr(string $ipAddress) : array
+    public static function createMatchSourceIpOrCidr(string $ipAddress) : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "payload" => [
-                        "protocol" => "ip",
-                        "field" => "saddr"
-                    ]
-                ],
-                "right" => $ipAddress
+        $left = [
+            "payload" => [
+                "protocol" => "ip",
+                "field" => "saddr"
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $ipAddress);
     }
 
 
@@ -190,7 +158,7 @@ readonly class NftablesMatchFactory
      * @return array[]
      * @throws ExceptionConnectionStateRequired - if no connection states were passed
      */
-    public static function createMatchConnectionStates(NftablesConnectionState ...$allowedStates) : array
+    public static function createMatchConnectionStates(NftablesConnectionState ...$allowedStates) : NftablesMatch
     {
         $allowedStatesStrings = [];
 
@@ -206,17 +174,13 @@ readonly class NftablesMatchFactory
             throw new ExceptionConnectionStateRequired();
         }
 
-        return [
-            "match" => [
-                "op" => "in",
-                "left" => [
-                    "ct" => [
-                        "key" => "state"
-                    ]
-                ],
-                "right" => $allowedStatesStrings
+        $left = [
+            "ct" => [
+                "key" => "state"
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::IN, $left, $allowedStatesStrings);
     }
 
 
@@ -226,29 +190,25 @@ readonly class NftablesMatchFactory
      * This is only good for allowing the forwarding of a SYN package for new connections
      * @return array[]
      */
-    public static function createMatchTcpSynFlag() : array
+    public static function createMatchTcpSynFlag() : NftablesMatch
     {
-        return [
-            "match" => [
-                "op" => "==",
-                "left" => [
-                    "&" => [
-                        [
-                            "payload" => [
-                                "protocol" => "tcp",
-                                "field" => "flags"
-                            ]
-                        ],
-                        [
-                            "fin",
-                            "syn",
-                            "rst",
-                            "ack"
-                        ]
+        $left = [
+            "&" => [
+                [
+                    "payload" => [
+                        "protocol" => "tcp",
+                        "field" => "flags"
                     ]
                 ],
-                "right" => "syn"
+                [
+                    "fin",
+                    "syn",
+                    "rst",
+                    "ack"
+                ]
             ]
         ];
+
+        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, "syn");
     }
 }

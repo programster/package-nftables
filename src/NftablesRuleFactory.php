@@ -15,29 +15,25 @@ readonly class NftablesRuleFactory
      * from.
      * @param NftablesChain $postRoutingChain
      * @param string $outputInterfaceName
-     * @return array[]
+     * @return NftablesRule - the created rule.
      * @throws ExceptionUnsuitableChain - if the chain provided as a parameter is unsuitable
      */
-    public static function createMasqueradeRule(NftablesChain $postRoutingChain, string $outputInterfaceName) : array
+    public static function createMasquerade(
+        NftablesChain $postRoutingChain,
+        string $outputInterfaceName
+    ) : NftablesRule
     {
         if ($postRoutingChain->getHook() !== NftablesChainHook::POSTROUTING)
         {
             throw new ExceptionUnsuitableChain("The masquerade rule needs to apply to a chain that uses the postrouting hook.");
         }
 
-        return [
-            "rule" => [
-                "family" => $postRoutingChain->getTable()->getFamily()->value,
-                "table" => $postRoutingChain->getTable()->getName(),
-                "chain" => $postRoutingChain->getName(),
-                "expr" => [
-                    NftablesMatchFactory::createMatchOutputInterfaceName($outputInterfaceName),
-                    [
-                        "masquerade" => null
-                    ]
-                ]
-            ]
+        $expressions = [
+            NftablesMatchFactory::createMatchOutputInterfaceName($outputInterfaceName),
+            [ "masquerade" => null ]
         ];
+
+        return new NftablesRule($postRoutingChain, $expressions);
     }
 
 
@@ -52,11 +48,11 @@ readonly class NftablesRuleFactory
      * @param Protocol $protocol - specify whether the traffic should be TCP/UDP.
      * @param string|null $sourceIpCidr - optionally provide an IP or CIDR for where the traffice must be coming from
      * for it to be matched against in order to be forwarded.
-     * @return array[]
+     * @return NftablesRule
      * @throws ExceptionUnsuitableChain
      * @throws Exceptions\ExceptionPortRequired
      */
-    public static function createPortForwardingRule(
+    public static function createPortForward(
         NftablesChain $preroutingChain,
         string   $incomingInterfaceName,
         int      $incomingPortNumber,
@@ -64,7 +60,7 @@ readonly class NftablesRuleFactory
         int      $internalServerPort,
         Protocol $protocol = Protocol::TCP,
         ?string  $sourceIpCidr = null,
-    ) : array
+    ) : NftablesRule
     {
         // not sure if should allow the forwarding hook too.
         if (in_array($preroutingChain->getHook()->value, ["prerouting"]) === false)
@@ -82,17 +78,12 @@ readonly class NftablesRuleFactory
             $matches[] = NftablesMatchFactory::createMatchSourceIpOrCidr($sourceIpCidr);
         }
 
-        return [
-            "rule" => [
-                "family" => $preroutingChain->getTable()->getFamily()->value,
-                "table" =>  $preroutingChain->getTable()->getName(),
-                "chain" => $preroutingChain->getName(),
-                "expr" => [
-                    ...$matches,
-                    NftablesLib::createDnat($internalServerIp, $internalServerPort)
-                ]
-            ]
+        $expressions = [
+            ...$matches,
+            NftablesLib::createDnat($internalServerIp, $internalServerPort)
         ];
+
+        return new NftablesRule($preroutingChain, $expressions);
     }
     
 
@@ -105,14 +96,14 @@ readonly class NftablesRuleFactory
      * connection must be in to be accepted. E.g. it is common to allow WAN inputs if the connection is in a related or
      * established state, from the server having made an outbound tcp connection for which it expects a response. If not
      * provided, then all states will be accepted.
-     * @return array[] - the rule in array form.
+     * @return NftablesRule
      * @throws ExceptionUnsuitableChain - if the chain provided is unsuitable
      */
-    public static function createAcceptNetworkInterfaceInputRule(
+    public static function createAcceptNetworkInterfaceInput(
         string $interfaceName,
         NftablesChain $inputChain,
         ?NftablesConnectionStateCollection $allowedStates = null
-    ) : array
+    ) : NftablesRule
     {
         if ($inputChain->getType() !== NftablesChainType::FILTER)
         {
@@ -134,14 +125,6 @@ readonly class NftablesRuleFactory
         }
 
         $expressions[] = ["accept" => null];
-
-        return [
-            "rule" => [
-                "family" => $inputChain->getTable()->getFamily(),
-                "table" => $inputChain->getTable()->getName(),
-                "chain" => $inputChain->getName(),
-                "expr" => $expressions
-            ]
-        ];
+        return new NftablesRule($inputChain, $expressions);
     }
 }
