@@ -51,7 +51,7 @@ readonly class NftablesRuleFactory
      * Create a NAT rule for port forwarding. This is the rule that performs the network address translation (NAT)
      * mangling of the packets, so that their destination is changed to the other IP address, and possibly a different
      * port. Depending in how your forwarding chain is setup (e.g. if you don't have an accept policy on your forwarding
-     * chain), then you may need to run createPortForwardForwardingRule as well to add forwarding rules.
+     * chain), then you may need to run createForwardingRule as well to add forwarding rules.
      * @param NftablesChain $preroutingChain - specify the chain that we are going to add this rule to.
      * @param string $inputInterfaceName - specify the name of the interface to accept the traffic on for forwarding.
      * This is typically the WAN interface.
@@ -104,6 +104,89 @@ readonly class NftablesRuleFactory
         ];
 
         return new NftablesRule($preroutingChain, $expressions, $comment);
+    }
+
+
+
+    /**
+     * Create a forwarding rule, typically for things like port forwarding.
+     * @param NftablesChain $forwardFilteringChain - the forwarding chain this rule needs adding to
+     * @param string $inputInterface - the interface the forwarding traffic must be coming in on.
+     * @param string $outputInterface - the output interface the forwarding traffic must be wanting to go out on.
+     * @param bool $checkForSynPacketType - whether to only allow traffic that is flagged SYN, which is used in TCP
+     * connections for establishing a new connection. E.g.  you may wish to create a rule that allows connection state
+     * "new" but only if this is set to true.
+     * https://www.digitalocean.com/community/tutorials/how-to-forward-ports-through-a-linux-gateway-with-iptables#adding-forwarding-rules-to-the-basic-firewall
+     * @param NftablesConnectionStateCollection|null $allowedStates - A list of possible connection states that will
+     * be allowed. E.g. one will typically want to allow through RELATED/ESTABLISHED tcp connections.
+     * @param Protocol $protocol - the protocol (TCP/UDP)
+     * @param int|null $destPort - the port of the connection.
+     * @param string|null $sourceIpOrCidr - where the traffic is being forwarded from.
+     * @param string|null $destIpOrCidr - the destination the traffic is being forwarded to.
+     * @param string|null $comment - an optional comment.
+     * @return NftablesRule
+     * @throws Exceptions\ExceptionConnectionStateRequired
+     * @throws Exceptions\ExceptionPortRequired
+     */
+    public static function createForwardingRule(
+        NftablesChain $forwardFilteringChain,
+        string        $inputInterface,
+        string        $outputInterface,
+        bool          $checkForSynPacketType,
+        ?NftablesConnectionStateCollection $allowedStates = null,
+        Protocol      $protocol = Protocol::TCP,
+        ?int          $destPort = null,
+        ?string       $sourceIpOrCidr = null,
+        ?string       $destIpOrCidr = null,
+        ?string       $comment = null,
+    ) : NftablesRule
+    {
+        if ($forwardFilteringChain->getHook() !== NftablesChainHook::FORWARD)
+        {
+            throw new Exception("The chain used for an forwarding rule needs to use the FORWARD hook.");
+        }
+
+        if ($forwardFilteringChain->getType() !== NftablesChainType::FILTER)
+        {
+            throw new Exception("The chain used for an forwarding rules needs to use the FILTER type.");
+        }
+
+        if ($checkForSynPacketType && $protocol !== Protocol::TCP)
+        {
+            throw new Exception("Checking for SYN package type is only applicable to TCP connections.");
+        }
+
+        $expressions = [
+            NftablesMatchFactory::createMatchInputInterfaceName($inputInterface),
+            NftablesMatchFactory::createMatchOutputInterfaceName($outputInterface),
+        ];
+
+        if ($allowedStates !== null)
+        {
+            $expressions[] = NftablesMatchFactory::createMatchConnectionStates(...$allowedStates->getStates());
+        }
+
+        if ($checkForSynPacketType)
+        {
+            $expressions[] = NftablesMatchFactory::createMatchTcpSynFlag();
+        }
+
+        if (count($sourceIpOrCidr) !== null)
+        {
+            $expressions[] = NftablesMatchFactory::createMatchSourceIpOrCidr($sourceIpOrCidr);
+        }
+
+        if (count($destIpOrCidr) !== null)
+        {
+            $expressions[] = NftablesMatchFactory::createMatchDestinationIpOrCidr($sourceIpOrCidr);
+        }
+
+        if ($destPort !== null)
+        {
+            $expressions[] = NftablesMatchFactory::createMatchDestinationPorts($protocol, $destPort);
+        }
+
+        return new NftablesRule($forwardFilteringChain, $expressions, $comment);
     }
 
 
