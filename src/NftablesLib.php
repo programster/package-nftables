@@ -6,17 +6,31 @@ namespace Programster\Nftables;
 readonly class NftablesLib
 {
    /**
-     * Create the section for specifying the DNAT or the destination ip and port for a prerouting/forwarding rule.
+     * Create the section for specifying the DNAT or the destination ip and port/port-range for a prerouting/forwarding rule.
      * @param string $desiredIp
-     * @param int $desiredPort
+     * @param int|PortRange $desiredPort - the desired port or range of ports.
      * @return array[]
      */
-    public static function createDnat(string $desiredIp, int $desiredPort) : array
+    public static function createDnat(string $desiredIp, int|PortRange $desiredPort) : array
     {
+        if ($desiredPort instanceof PortRange)
+        {
+            $desiredPortBlock = [
+                "range" => [
+                    $desiredPort->minPort,
+                    $desiredPort->maxPort,
+                ]
+            ];
+        }
+        else
+        {
+            $desiredPortBlock = $desiredPort;
+        }
+
         return [
             "dnat" => [
                 "addr" => $desiredIp,
-                "port" => $desiredPort
+                "port" => $desiredPortBlock
             ]
         ];
     }

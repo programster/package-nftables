@@ -107,6 +107,47 @@ readonly class NftablesRuleFactory
     }
 
 
+    public static function createPortRangeForwardNatRule(
+        NftablesChain $preroutingChain,
+        string        $inputInterfaceName,
+        PortRange     $inputPorts,
+        string        $newDestIp,
+        PortRange     $destPorts,
+        Protocol      $protocol = Protocol::TCP,
+        ?string       $sourceIpCidr = null,
+        ?string       $comment = null,
+    ) : NftablesRule
+    {
+        // not sure if should allow the forwarding hook too.
+        if ($preroutingChain->getHook() !== NftablesChainHook::PREROUTING)
+        {
+            throw new ExceptionUnsuitableChain("The chain used for an NAT port rule needs to use the PREROUTING hook.");
+        }
+
+        if ($preroutingChain->getType() !== NftablesChainType::NAT)
+        {
+            throw new Exception("The chain used for an NAT port rule needs to use the NAT type.");
+        }
+
+        $matches = [
+            NftablesMatchFactory::createMatchInputInterfaceName($inputInterfaceName),
+            NftablesMatchFactory::createMatchDestinationPortRange($protocol, $inputPorts),
+        ];
+
+        if ($sourceIpCidr !== null)
+        {
+            $matches[] = NftablesMatchFactory::createMatchSourceIpOrCidr($sourceIpCidr);
+        }
+
+        $expressions = [
+            ...$matches,
+            NftablesLib::createDnat($newDestIp, $destPorts)
+        ];
+
+        return new NftablesRule($preroutingChain, $expressions, $comment);
+    }
+
+
 
     /**
      * Create a forwarding rule, typically for things like port forwarding.
