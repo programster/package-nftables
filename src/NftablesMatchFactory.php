@@ -160,6 +160,11 @@ readonly class NftablesMatchFactory
      */
     public static function createMatchConnectionStates(NftablesConnectionState ...$allowedStates) : NftablesMatch
     {
+        if (count($allowedStates) === 0)
+        {
+            throw new ExceptionConnectionStateRequired();
+        }
+
         $allowedStatesStrings = [];
 
         foreach ($allowedStates as $allowedState)

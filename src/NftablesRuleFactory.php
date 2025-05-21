@@ -5,6 +5,7 @@ namespace Programster\Nftables;
 use Programster\Nftables\Enums\NftablesChainType;
 use Programster\Nftables\Enums\NftablesChainHook;
 use Programster\Nftables\Enums\Protocol;
+use Programster\Nftables\Exceptions\ExceptionConnectionStateRequired;
 use Programster\Nftables\Exceptions\ExceptionUnsuitableChain;
 
 readonly class NftablesRuleFactory
@@ -24,6 +25,7 @@ readonly class NftablesRuleFactory
      * from.
      * @param NftablesChain $postRoutingChain
      * @param string $outputInterfaceName
+     * @param string|null $comment - optionally provide a comment for the rule.
      * @return NftablesRule - the created rule.
      * @throws ExceptionUnsuitableChain - if the chain provided as a parameter is unsuitable
      */
@@ -60,8 +62,12 @@ readonly class NftablesRuleFactory
      * will typically be the internal/private IP of  your internal server that you wish to forward traffic onto.
      * @param int $newDestPort - specify the port the traffic should be forwarded to.
      * @param Protocol $protocol - specify whether the traffic should be TCP/UDP.
-     * @param string|null $sourceIpCidr - optionally provide an IP or CIDR for where the traffice must be coming from
+     * @param string|null $sourceIpCidr - optionally provide an IP or CIDR for where the traffic must be coming from
      * for it to be matched against in order to be forwarded.
+     * @param string|null $destIpCidr - optionally provide an IP or CIDR for where the traffic must be wanting to go
+     * to for it to be matched against in order to be forwarded. This is not to be confused with $newDestIp, which is
+     * the IP address we will re-route the packets to if it matches all the conditions.
+     * @param string|null $comment - optionally provide a comment for the rule.
      * @return NftablesRule
      * @throws ExceptionUnsuitableChain
      * @throws Exceptions\ExceptionPortRequired
@@ -74,6 +80,7 @@ readonly class NftablesRuleFactory
         int           $newDestPort,
         Protocol      $protocol = Protocol::TCP,
         ?string       $sourceIpCidr = null,
+        ?string       $destIpCidr = null,
         ?string       $comment = null,
     ) : NftablesRule
     {
@@ -85,7 +92,7 @@ readonly class NftablesRuleFactory
 
         if ($preroutingChain->getType() !== NftablesChainType::NAT)
         {
-            throw new Exception("The chain used for an NAT port rule needs to use the NAT type.");
+            throw new ExceptionUnsuitableChain("The chain used for an NAT port rule needs to use the NAT type.");
         }
 
         $matches = [
@@ -96,6 +103,11 @@ readonly class NftablesRuleFactory
         if ($sourceIpCidr !== null)
         {
             $matches[] = NftablesMatchFactory::createMatchSourceIpOrCidr($sourceIpCidr);
+        }
+
+        if ($destIpCidr !== null)
+        {
+            $matches[] = NftablesMatchFactory::createMatchDestinationIpOrCidr($destIpCidr);
         }
 
         $expressions = [
@@ -126,7 +138,7 @@ readonly class NftablesRuleFactory
 
         if ($preroutingChain->getType() !== NftablesChainType::NAT)
         {
-            throw new Exception("The chain used for an NAT port rule needs to use the NAT type.");
+            throw new \Exception("The chain used for an NAT port rule needs to use the NAT type.");
         }
 
         $matches = [
@@ -166,9 +178,10 @@ readonly class NftablesRuleFactory
      * @param string|null $destIpOrCidr - the destination the traffic is being forwarded to.
      * @param string|null $comment - an optional comment.
      * @return NftablesRule
+     * @throws ExceptionUnsuitableChain
      * @throws Exceptions\ExceptionConnectionStateRequired
      * @throws Exceptions\ExceptionPortRequired
-     */
+ */
     public static function createForwardingRule(
         NftablesChain $forwardFilteringChain,
         string        $inputInterface,
@@ -184,17 +197,17 @@ readonly class NftablesRuleFactory
     {
         if ($forwardFilteringChain->getHook() !== NftablesChainHook::FORWARD)
         {
-            throw new Exception("The chain used for an forwarding rule needs to use the FORWARD hook.");
+            throw new ExceptionUnsuitableChain("The chain used for an forwarding rule needs to use the FORWARD hook.");
         }
 
         if ($forwardFilteringChain->getType() !== NftablesChainType::FILTER)
         {
-            throw new Exception("The chain used for an forwarding rules needs to use the FILTER type.");
+            throw new ExceptionUnsuitableChain("The chain used for an forwarding rules needs to use the FILTER type.");
         }
 
         if ($checkForSynPacketType && $protocol !== Protocol::TCP)
         {
-            throw new Exception("Checking for SYN package type is only applicable to TCP connections.");
+            throw new \Exception("Checking for SYN package type is only applicable to TCP connections.");
         }
 
         $expressions = [
@@ -212,12 +225,12 @@ readonly class NftablesRuleFactory
             $expressions[] = NftablesMatchFactory::createMatchTcpSynFlag();
         }
 
-        if (count($sourceIpOrCidr) !== null)
+        if ($sourceIpOrCidr !== null)
         {
             $expressions[] = NftablesMatchFactory::createMatchSourceIpOrCidr($sourceIpOrCidr);
         }
 
-        if (count($destIpOrCidr) !== null)
+        if ($destIpOrCidr !== null)
         {
             $expressions[] = NftablesMatchFactory::createMatchDestinationIpOrCidr($sourceIpOrCidr);
         }
@@ -287,7 +300,7 @@ readonly class NftablesRuleFactory
         }
         else
         {
-            throw new Exception("Whoops! Something unforeseen has gone wrong.");
+            throw new \Exception("Whoops! Something unforeseen has gone wrong.");
         }
 
         if ($destIpOrCidr !== null)
@@ -308,7 +321,7 @@ readonly class NftablesRuleFactory
         $expressions[] = ["accept" => null];
         return new NftablesRule($inputFilterChain, $expressions, $comment);
     }
-    
+
 
     /**
      * Creates a rule that just says we accept everything on an interface. You typically want to do this
@@ -319,6 +332,7 @@ readonly class NftablesRuleFactory
      * connection must be in to be accepted. E.g. it is common to allow WAN inputs if the connection is in a related or
      * established state, from the server having made an outbound tcp connection for which it expects a response. If not
      * provided, then all states will be accepted.
+     * @param string|null $comment - optionally provide a comment for the rule.
      * @return NftablesRule
      * @throws ExceptionUnsuitableChain - if the chain provided is unsuitable
      */
@@ -343,7 +357,7 @@ readonly class NftablesRuleFactory
             NftablesMatchFactory::createMatchInputInterfaceName($interfaceName),
         ];
 
-        if ($allowedStates !== null)
+        if ($allowedStates !== null && count($allowedStates->getStates()) > 0)
         {
             $expressions[] = NftablesMatchFactory::createMatchConnectionStates(...$allowedStates->getStates());
         }
