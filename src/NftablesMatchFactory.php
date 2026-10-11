@@ -270,7 +270,7 @@ readonly class NftablesMatchFactory
         $right = [
             "prefix" => [
                 "addr" => $address,
-                "len" => $prefixLength
+                "len" => intval($prefixLength)
             ]
         ];
 
