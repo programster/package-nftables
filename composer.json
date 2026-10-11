@@ -14,7 +14,8 @@
         }
     ],
     "require": {
-        "php": ">=8.2.0"
+        "php": ">=8.2.0",
+        "mlocati/ip-lib": "^1.22"
     },
     "autoload": {
         "psr-4": {

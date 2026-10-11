@@ -7,10 +7,13 @@
 namespace Programster\Nftables;
 
 
+use IPLib\Factory;
+use IPLib\Range\Subnet;
 use Programster\Nftables\Enums\NftablesConnectionState;
 use Programster\Nftables\Enums\NftablesMatchOperator;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Exceptions\ExceptionConnectionStateRequired;
+use Programster\Nftables\Exceptions\ExceptionInvalidNetworkCidr;
 use Programster\Nftables\Exceptions\ExceptionPortRequired;
 
 readonly class NftablesMatchFactory
@@ -116,10 +119,11 @@ readonly class NftablesMatchFactory
 
     /**
      * Create a match against a destination single IP address or a CIDR of multiple IP addresses.
-     * @param string $ipAddress
-     * @return array[]
+     * @param string $ipOrCidr
+     * @return \Programster\Nftables\NftablesMatch
+     * @throws \Programster\Nftables\Exceptions\ExceptionInvalidNetworkCidr
      */
-    public static function createMatchDestinationIpOrCidr(string $ipAddress) : NftablesMatch
+    public static function createMatchDestinationIpOrCidr(string $ipOrCidr) : NftablesMatch
     {
         $left = [
             "payload" => [
@@ -128,16 +132,17 @@ readonly class NftablesMatchFactory
             ]
         ];
 
-        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $ipAddress);
+        return self::createMatchIpOrCidr($left, $ipOrCidr);
     }
 
 
     /**
      * Create a match against a source single IP address or a CIDR of multiple IP addresses.
-     * @param string $ipAddress
-     * @return array[]
+     * @param string $ipOrCidr - the IP address or network CIDR to match against.
+     * @return NftablesMatch
+     * @throws \Programster\Nftables\Exceptions\ExceptionInvalidNetworkCidr
      */
-    public static function createMatchSourceIpOrCidr(string $ipAddress) : NftablesMatch
+    public static function createMatchSourceIpOrCidr(string $ipOrCidr) : NftablesMatch
     {
         $left = [
             "payload" => [
@@ -146,7 +151,7 @@ readonly class NftablesMatchFactory
             ]
         ];
 
-        return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $ipAddress);
+        return self::createMatchIpOrCidr($left, $ipOrCidr);
     }
 
 
@@ -215,5 +220,60 @@ readonly class NftablesMatchFactory
         ];
 
         return new NftablesMatch(NftablesMatchOperator::EQUALS, $left, "syn");
+    }
+
+
+    /**
+     * Create a match against a source single IP address or a CIDR of multiple IP addresses.
+     * @param array $left
+     * @param string $ipOrCidr - the IP address or network CIDR to match against.
+     * @return NftablesMatch
+     * @throws \Programster\Nftables\Exceptions\ExceptionInvalidNetworkCidr
+     */
+    private static function createMatchIpOrCidr(array $left, string $ipOrCidr) : NftablesMatch
+    {
+        if (Factory::parseAddressString($ipOrCidr) !== null)
+        {
+            $result = new NftablesMatch(NftablesMatchOperator::EQUALS, $left, $ipOrCidr);
+        }
+        else if (Subnet::parseString($ipOrCidr) !== null)
+        {
+            $result = self::createMatchCidr($left, $ipOrCidr);
+        }
+        else
+        {
+            throw new \Exception("{$ipOrCidr} is not an IP address or CIDR.");
+        }
+
+        return $result;
+    }
+
+
+    private static function createMatchCidr(array $left, string $cidr) : NftablesMatch
+    {
+        if (NftablesLib::isValidNetworkCidr($cidr) === false)
+        {
+            if (NftablesLib::isValidNetworkCidr($cidr))
+            {
+                throw new ExceptionInvalidNetworkCidr("{$cidr} is a valid CIDR but not a valid *network* CIDR.");
+            }
+            else
+            {
+                throw new ExceptionInvalidNetworkCidr("{$cidr} is not a valid network CIDR.");
+            }
+        }
+
+        $parts = explode("/", $cidr);
+        $address = $parts[0];
+        $prefixLength = $parts[1];
+
+        $right = [
+            "prefix" => [
+                "addr" => $address,
+                "len" => $prefixLength
+            ]
+        ];
+
+        return new NftablesMatch(NftablesMatchOperator::IN, $left, $right);
     }
 }
