@@ -23,5 +23,13 @@
             "Programster\\Nftables\\Exceptions\\": "src/exceptions/",
             "Programster\\Nftables\\Enums\\": "src/enums/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Programster\\Nftables\\Testing\\": "testing/"
+        }
+    },
+    "scripts": {
+        "test": "@php testing/main.php"
     }
 }
