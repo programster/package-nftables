@@ -7,6 +7,7 @@ namespace Programster\Nftables;
 use Programster\Nftables\Enums\BinaryOperator;
 use Programster\Nftables\Enums\Existence;
 use Programster\Nftables\Enums\FibResult;
+use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\MatchMode;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\Operator;
@@ -257,6 +258,29 @@ final class MatchFactory
     ) : MatchStatement
     {
         return new MatchStatement(new MetaExpression(MetaKey::L4PROTO), $mode->getOperator(), $protocol->value);
+    }
+
+
+    /**
+     * Match ICMPv6 packets of some types (icmpv6 type { echo-request, echo-reply }), e.g. to accept pings. In an inet
+     * table, it only matches IPv6 packets.
+     *
+     * @param Icmpv6Type ...$types - the types. At least one is needed.
+     *
+     * @return MatchStatement
+     *
+     * @throws BadArgumentException - if there are no types.
+     */
+    public static function createIcmpv6Types(Icmpv6Type ...$types) : MatchStatement
+    {
+        if (count($types) === 0)
+        {
+            throw new BadArgumentException("Matching ICMPv6 types needs at least one type.");
+        }
+
+        $names = array_values(array_unique(array_column($types, "value")));
+        $right = (count($names) === 1) ? $names[0] : new SetExpression(...$names);
+        return new MatchStatement(PayloadExpression::create(PayloadField::ICMPV6_TYPE), Operator::EQUALS, $right);
     }
 
 

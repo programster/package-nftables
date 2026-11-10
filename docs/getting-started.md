@@ -17,7 +17,8 @@ It needs PHP 8.2 or above. The rulesets it generates can be loaded on a differen
 
 ## A complete example
 A gateway with a WAN interface (`eth0`) and a LAN (`eth1`). It drops anything it doesn't expect, allows SSH from one
-office network, lets the LAN out to the internet, and forwards port 443 to a web server on the LAN:
+office network, lets the LAN out to the internet, and forwards port 443 to a web server on the LAN. The
+[examples](examples.md) have more, including one with IPv6:
 
 ```php
 use Programster\Nftables\BaseChain;

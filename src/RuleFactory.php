@@ -14,6 +14,7 @@ use Programster\Nftables\Enums\Existence;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
+use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\Operator;
@@ -459,6 +460,64 @@ final class RuleFactory
 
 
     /**
+     * Create a rule that accepts the ICMPv6 messages IPv6 can't work without, which RFC 4890 says a firewall mustn't
+     * drop. Unlike ICMP for IPv4, these aren't optional: without neighbour discovery (IPv6's ARP), a machine can't
+     * reach its neighbours or its router, and without packet too big errors, connections over a route with a smaller
+     * MTU hang. Put one in each chain with a drop policy that IPv6 passes through:
+     *
+     * - in an input chain: errors (destination unreachable, packet too big, time exceeded and parameter problem),
+     * neighbour and router discovery, and multicast listener discovery.
+     *
+     * - in a forward chain: errors only, as discovery never crosses a router.
+     *
+     * Pings aren't included. To accept those too, add a rule with MatchFactory::createIcmpv6Types().
+     *
+     * @param BaseChain $chain - a filter chain on the input or forward hook, in an ip6 or inet table.
+     *
+     * @param string $comment - optionally, a comment for the rule.
+     *
+     * @return Rule
+     *
+     * @throws UnsuitableChainException - if the chain isn't a filter chain on the input or forward hook, in an ip6 or
+     * inet table.
+     */
+    public static function createAcceptEssentialIcmpv6(BaseChain $chain, string $comment = "") : Rule
+    {
+        $purpose = "accept essential ICMPv6";
+        ChainLib::assertChainIs($chain, ChainType::FILTER, $purpose, ChainHook::INPUT, ChainHook::FORWARD);
+        $family = $chain->getTable()->getFamily();
+
+        if ($family !== Family::IP6 && $family !== Family::INET)
+        {
+            $message = "A rule to {$purpose} needs an ip6 or inet table, not {$family->value}.";
+            throw new UnsuitableChainException($message);
+        }
+
+        $types = [
+            Icmpv6Type::DESTINATION_UNREACHABLE,
+            Icmpv6Type::PACKET_TOO_BIG,
+            Icmpv6Type::TIME_EXCEEDED,
+            Icmpv6Type::PARAMETER_PROBLEM,
+        ];
+
+        if ($chain->getHook() === ChainHook::INPUT)
+        {
+            $types[] = Icmpv6Type::ND_ROUTER_SOLICIT;
+            $types[] = Icmpv6Type::ND_ROUTER_ADVERT;
+            $types[] = Icmpv6Type::ND_NEIGHBOR_SOLICIT;
+            $types[] = Icmpv6Type::ND_NEIGHBOR_ADVERT;
+            $types[] = Icmpv6Type::MLD_LISTENER_QUERY;
+            $types[] = Icmpv6Type::MLD_LISTENER_REPORT;
+            $types[] = Icmpv6Type::MLD_LISTENER_DONE;
+            $types[] = Icmpv6Type::MLD2_LISTENER_REPORT;
+        }
+
+        $isEssential = MatchFactory::createIcmpv6Types(...$types);
+        return Rule::create($chain, $isEssential, Verdict::ACCEPT)->withComment($comment);
+    }
+
+
+    /**
      * Create a masquerade rule, which makes traffic leaving by an interface appear to come from this machine, e.g. so
      * machines behind it can reach the internet through its public address.
      *
@@ -466,20 +525,40 @@ final class RuleFactory
      *
      * @param string $outputInterfaceName - the interface the traffic leaves by, typically the WAN interface.
      *
+     * @param IpVersion|null $ipVersion - optionally, only masquerade this IP version (meta nfproto ipv4), e.g. IPv4 in
+     * an inet table, for machines behind this one that have public IPv6 addresses of their own, so their IPv6 traffic
+     * is routed rather than NATed. Defaults to null, for whichever versions the chain's table handles.
+     *
      * @param string $comment - optionally, a comment for the rule.
      *
      * @return Rule
      *
-     * @throws UnsuitableChainException - if the chain isn't a nat chain on the postrouting hook.
+     * @throws UnsuitableChainException - if the chain isn't a nat chain on the postrouting hook, or $ipVersion is the
+     * other version to its ip or ip6 table's.
      */
     public static function createMasquerade(
         BaseChain $postroutingChain,
         string $outputInterfaceName,
+        ?IpVersion $ipVersion = null,
         string $comment = "",
     ) : Rule
     {
         ChainLib::assertChainIs($postroutingChain, ChainType::NAT, "masquerade", ChainHook::POSTROUTING);
-        $statements = [MatchFactory::createOutputInterfaceName($outputInterfaceName), new MasqueradeStatement()];
+        $family = $postroutingChain->getTable()->getFamily();
+        $statements = [MatchFactory::createOutputInterfaceName($outputInterfaceName)];
+
+        if ($ipVersion !== null && $family === Family::INET)
+        {
+            $nfproto = ($ipVersion === IpVersion::IPV4) ? "ipv4" : "ipv6";
+            $statements[] = new MatchStatement(new MetaExpression(MetaKey::NFPROTO), Operator::EQUALS, $nfproto);
+        }
+        elseif ($ipVersion !== null && $family->value !== $ipVersion->value)
+        {
+            $message = "A {$family->value} table only handles one IP version, so it can't masquerade the other.";
+            throw new UnsuitableChainException($message);
+        }
+
+        $statements[] = new MasqueradeStatement();
         return Rule::create($postroutingChain, ...$statements)->withComment($comment);
     }
 

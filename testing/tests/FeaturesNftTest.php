@@ -30,6 +30,7 @@ use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
 use Programster\Nftables\Enums\IcmpRejectCode;
 use Programster\Nftables\Enums\Icmpv6RejectCode;
+use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\IcmpxRejectCode;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\IpsecDirection;
@@ -1069,6 +1070,64 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
     };
 
     $smoke->run("nft: accepting every port forward loads", $testAcceptPortForwards);
+
+    $ipv6Fixtures = [$inetTable, $ip6Table, $inetInput, $input6];
+
+    $testIcmpv6 = function () use ($assertRulesLoadAs, $rule, $chain, $ipv6Fixtures) : void {
+        [$inetTable, $ip6Table, $inetInput, $input6] = $ipv6Fixtures;
+        $inetForward = $chain("forward", $inetTable, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER);
+        $forward6 = $chain("forward", $ip6Table, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER);
+        $errors = "destination-unreachable, packet-too-big, time-exceeded, parameter-problem";
+
+        $discovery = "mld-listener-query, mld-listener-report, mld-listener-done, nd-router-solicit, nd-router-advert,"
+            . " nd-neighbor-solicit, nd-neighbor-advert, mld2-listener-report";
+
+        $ping = MatchFactory::createIcmpv6Types(Icmpv6Type::ECHO_REQUEST, Icmpv6Type::ECHO_REQUEST);
+
+        $rules = [
+            RuleFactory::createAcceptEssentialIcmpv6($inetInput),
+            RuleFactory::createAcceptEssentialIcmpv6($inetForward),
+            RuleFactory::createAcceptEssentialIcmpv6($input6),
+            RuleFactory::createAcceptEssentialIcmpv6($forward6),
+            $rule($inetInput, $ping, Verdict::ACCEPT),
+        ];
+
+        $expected = [
+            "icmpv6 type { {$errors}, {$discovery} } accept",
+            "icmpv6 type { {$errors} } accept",
+            "icmpv6 type echo-request accept",
+        ];
+
+        $assertRulesLoadAs($expected, ...$rules);
+    };
+
+    $smoke->run("nft: accepting essential ICMPv6, and matching ICMPv6 types, loads", $testIcmpv6);
+
+    $testMasqueradeIpVersion = function () use ($assertRulesLoadAs, $chain, $ipv6Fixtures, $postrouting) : void {
+        [$inetTable, $ip6Table] = $ipv6Fixtures;
+        $inetPostrouting = $chain("postrouting", $inetTable, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT);
+        $postrouting6 = $chain("postrouting", $ip6Table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT);
+
+        $rules = [
+            RuleFactory::createMasquerade($inetPostrouting, "eth0", IpVersion::IPV4),
+            RuleFactory::createMasquerade($inetPostrouting, "eth1", IpVersion::IPV6),
+            RuleFactory::createMasquerade($inetPostrouting, "eth2"),
+            RuleFactory::createMasquerade($postrouting, "eth3", IpVersion::IPV4),
+            RuleFactory::createMasquerade($postrouting6, "eth4", IpVersion::IPV6),
+        ];
+
+        $expected = [
+            'oifname "eth0" meta nfproto ipv4 masquerade',
+            'oifname "eth1" meta nfproto ipv6 masquerade',
+            'oifname "eth2" masquerade',
+            'oifname "eth3" masquerade',
+            'oifname "eth4" masquerade',
+        ];
+
+        $assertRulesLoadAs($expected, ...$rules);
+    };
+
+    $smoke->run("nft: masquerading one IP version loads", $testMasqueradeIpVersion);
 };
 
 try

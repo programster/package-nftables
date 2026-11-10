@@ -9,6 +9,7 @@
   - [Accepting port forwards](#accepting-port-forwards)
   - [Forwarding traffic through](#forwarding-traffic-through)
   - [Masquerading](#masquerading)
+  - [Accepting essential ICMPv6](#accepting-essential-icmpv6)
   - [Spotting spoofed packets](#spotting-spoofed-packets)
   - [MSS clamping](#mss-clamping)
   - [Flow offloading](#flow-offloading)
@@ -221,6 +222,59 @@ $ruleset->addRule(RuleFactory::createMasquerade($postrouting, "eth0"));
 oifname "eth0" masquerade
 ```
 
+In an `inet` table, it masquerades both IP versions. When the machines behind it have public IPv6 addresses of their
+own, so their IPv6 traffic should be routed rather than NATed, pass `IpVersion::IPV4` to only masquerade IPv4:
+
+```php
+$dualStack = new Table("dual_stack", Family::INET);
+$dualStackPostrouting = new BaseChain("postrouting", $dualStack, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
+$ruleset->addRule(RuleFactory::createMasquerade($dualStackPostrouting, "eth0", IpVersion::IPV4));
+```
+
+```nft
+oifname "eth0" meta nfproto ipv4 masquerade
+```
+
+In an `ip` or `ip6` table, it's only ever that table's version, so passing the other one throws an
+`UnsuitableChainException`.
+
+### Accepting essential ICMPv6
+IPv6 can't work without some ICMPv6 messages, which [RFC 4890](https://www.rfc-editor.org/rfc/rfc4890) says a
+firewall mustn't drop. Without neighbour discovery (IPv6's ARP), a machine can't reach its neighbours or its router,
+and without "packet too big" errors, connections over a route with a smaller MTU hang. `createAcceptEssentialIcmpv6()`
+accepts them, in a filter chain on the input or forward hook of an `ip6` or `inet` table, so any chain with a drop
+policy that IPv6 passes through needs one:
+
+```php
+$dualStackInput = new BaseChain("input", $dualStack, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
+$dualStackForward = new BaseChain("forward", $dualStack, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::DROP);
+$ruleset->addRule(RuleFactory::createAcceptEssentialIcmpv6($dualStackInput));
+$ruleset->addRule(RuleFactory::createAcceptEssentialIcmpv6($dualStackForward));
+```
+
+```nft
+icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem, mld-listener-query, mld-listener-report, mld-listener-done, nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, mld2-listener-report } accept
+icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-problem } accept
+```
+
+| Chain | Accepts |
+|---|---|
+| Input | Errors (destination unreachable, packet too big, time exceeded and parameter problem), neighbour and router discovery, and multicast listener discovery, which tells switches which multicast groups (including neighbour discovery's) a machine listens to |
+| Forward | Errors only, as discovery never crosses a router |
+
+Pings aren't included. To accept those too, match them with `MatchFactory::createIcmpv6Types()`:
+
+```php
+$ruleset->addRule(Rule::create($dualStackInput, MatchFactory::createIcmpv6Types(Icmpv6Type::ECHO_REQUEST), Verdict::ACCEPT));
+```
+
+```nft
+icmpv6 type echo-request accept
+```
+
+IPv4 needs no rule like this: ARP isn't IP, so an `ip` or `inet` table never sees it, and the ICMP errors about a
+connection are accepted along with it, as `related`.
+
 ### Spotting spoofed packets
 `createReversePathFilter()` drops packets that couldn't have arrived on the interface they did: ones whose source
 address this machine wouldn't route back out of that interface. That's how packets with spoofed source addresses are
@@ -279,6 +333,7 @@ with `MatchMode::DOES_NOT_MATCH`, and the address ones work out IPv4 or IPv6 fro
 | `createInSet($left, $set)` | Something in it, against a [named set](sets.md) | `ip saddr @blocklist` |
 | `createConnectionStates($states)` | Its connection's state | `ct state established,related` |
 | `createTransportProtocol($protocol)` | Its transport protocol, in either IP version | `meta l4proto udp` |
+| `createIcmpv6Types(...$types)` | Its ICMPv6 type, one or more `Icmpv6Type`s | `icmpv6 type echo-request` |
 | `createTcpSyn()` | The start of a TCP connection | `tcp flags & (fin \| syn \| rst \| ack) == syn` |
 | `createExistence($left, $existence)` | Whether it has something: see [existence checks](expressions.md#existence-checks) | `exthdr frag exists` |
 

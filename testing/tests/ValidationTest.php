@@ -1189,6 +1189,52 @@ $cases[] = [
     $createAcceptingPortForwardsInAnInputChain,
 ];
 
+$createAcceptingEssentialIcmpv6InAnIpTable = function () use ($input) : void {
+    RuleFactory::createAcceptEssentialIcmpv6($input);
+};
+
+$cases[] = [
+    "accepting essential ICMPv6 in an ip table",
+    UnsuitableChainException::class,
+    "ip6 or inet table",
+    $createAcceptingEssentialIcmpv6InAnIpTable,
+];
+
+$createAcceptingEssentialIcmpv6InAnOutputChain = function () : void {
+    $output = Fixtures::createBaseChain(Fixtures::createTable("t", Family::INET), ChainType::FILTER, ChainHook::OUTPUT);
+    RuleFactory::createAcceptEssentialIcmpv6($output);
+};
+
+$cases[] = [
+    "accepting essential ICMPv6 in an output chain",
+    UnsuitableChainException::class,
+    "input or forward hook",
+    $createAcceptingEssentialIcmpv6InAnOutputChain,
+];
+
+$createAnEmptyIcmpv6TypeMatch = function () : void {
+    MatchFactory::createIcmpv6Types();
+};
+
+$cases[] = [
+    "an ICMPv6 type match with no types",
+    BadArgumentException::class,
+    "at least one",
+    $createAnEmptyIcmpv6TypeMatch,
+];
+
+$createMasqueradingIpv6InAnIpTable = function () use ($ipTable) : void {
+    $postrouting = Fixtures::createBaseChain($ipTable, ChainType::NAT, ChainHook::POSTROUTING);
+    RuleFactory::createMasquerade($postrouting, "eth0", IpVersion::IPV6);
+};
+
+$cases[] = [
+    "masquerading IPv6 in an ip table",
+    UnsuitableChainException::class,
+    "only handles one IP version",
+    $createMasqueradingIpv6InAnIpTable,
+];
+
 foreach ($cases as [$description, $exceptionClass, $messageContains, $code])
 {
     $test = function () use ($exceptionClass, $code, $messageContains) : void {

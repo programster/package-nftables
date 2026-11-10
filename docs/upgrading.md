@@ -101,7 +101,7 @@ The chain always comes first now, and the parameters have clearer names, which m
 | `createPortForwardNatRule($preroutingChain, $inputInterfaceName, $inputPort, $newDestIp, $newDestPort, $protocol, $sourceIpCidr, $destIpCidr, $comment)` | `createPortForward($preroutingChain, $inputInterfaceName, $incomingPorts, $newDestinationAddress, $newDestinationPorts, $protocol, $sourceAddress, $destinationAddress, $comment)` |
 | `createPortRangeForwardNatRule($preroutingChain, $inputInterfaceName, $inputPorts, $newDestIp, $destPorts, $protocol, $sourceIpCidr, $comment)` | `createPortForward()`, with `PortRange`s. The new ports can be left out, to keep each packet's port. |
 | `createForwardingRule($forwardFilteringChain, $inputInterface, $outputInterface, $checkForSynPacketType, $allowedStates, $protocol, $destPort, $sourceIpOrCidr, $destIpOrCidr, $comment)` | `createForward($forwardChain, $inputInterfaceName, $outputInterfaceName, $states, $protocol, $destinationPorts, $sourceAddress, $destinationAddress, $requireTcpSyn, $comment)`. The SYN check is now an optional named parameter near the end. |
-| `createMasquerade($postRoutingChain, $outputInterfaceName, $comment)` | `createMasquerade($postroutingChain, $outputInterfaceName, $comment)` |
+| `createMasquerade($postRoutingChain, $outputInterfaceName, $comment)` | `createMasquerade($postroutingChain, $outputInterfaceName, $ipVersion, $comment)`. A comment passed by position now goes fourth, or by name. |
 
 `createPortForward()` now refuses to forward a range of ports to a different range, which nft can't do one to one, and
 `createForward()` refuses a SYN check on anything but TCP.
@@ -118,8 +118,8 @@ The chain always comes first now, and the parameters have clearer names, which m
 | `createMatchConnectionStates(...$states)` | `createConnectionStates(new ConnectionStateSet(...$states))` |
 | `createMatchTcpSynFlag()` | `createTcpSyn()` |
 
-Most of them now take a `MatchMode`, to negate them, and there are new ones: `createSourcePorts()`, `createInSet()` and
-`createTransportProtocol()`.
+Most of them now take a `MatchMode`, to negate them, and there are new ones: `createSourcePorts()`, `createInSet()`,
+`createTransportProtocol()` and `createIcmpv6Types()`.
 
 ## Everything else
 New in 1.0, and covered in the rest of the docs: [targets](targets.md),
@@ -130,5 +130,5 @@ families, and the [statements](statements.md) and [expressions](expressions.md) 
 log, counter, limit, quota, connection limits, queue, notrack, marks, snat and redirect, synproxy, transparent
 proxying, adding to sets from rules (meters), dup and fwd, existence checks, fib and rt lookups, sockets, IPsec,
 IPv6 extension headers, TCP options and SCTP chunks, number generators and hashes, OS fingerprinting, and rules for
-spotting spoofed packets, clamping the MSS, offloading to a flowtable, port forwarding from a map and accepting port
-forwards.
+spotting spoofed packets, clamping the MSS, offloading to a flowtable, port forwarding from a map, accepting port
+forwards and accepting essential ICMPv6. There are also complete [examples](examples.md).
