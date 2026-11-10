@@ -91,7 +91,8 @@ final readonly class NftNamespace
         $listings = "{$nft} list ruleset\necho '{$separator}'\n{$nft} --json list ruleset";
         $script = "{$devices}\n{$this->load($file)}\n{$listings}";
         [$listing, $json] = explode($separator, self::runCommand(["unshare", "-rn", "bash", "-ec", $script]));
-        self::assertNothingDropped($ruleset->toArray()["nftables"], json_decode($json, true)["nftables"]);
+        $listedItems = json_decode($json, true)["nftables"];
+        self::assertNothingDropped($ruleset->toArray()["nftables"], $listedItems, $listing);
         return array_map("trim", explode("\n", trim($listing)));
     }
 
@@ -187,20 +188,32 @@ final readonly class NftNamespace
 
     /**
      * Check that nft kept everything it was given that it can silently drop: every table, chain, set, map, flowtable
-     * and named object, tables' flags, chains' hooks, flowtables' devices, ct timeouts' policies, and every kind of
-     * statement, including the statements in a set update. Matches aren't compared, as nft leaves out ones that a
-     * later statement implies (e.g. meta l4proto tcp before reject with tcp reset).
+     * and named object, tables' flags, chains' hooks, chains' and flowtables' devices, ct timeouts' policies, and every
+     * kind of statement, including the statements in a set update. Matches aren't compared, as nft leaves out ones that
+     * a later statement implies (e.g. meta l4proto tcp before reject with tcp reset).
      *
      * @param array $sent - the items in the ruleset that was loaded.
      *
      * @param array $listed - the items in nft's JSON listing of what it loaded.
      *
+     * @param string $textListing - nft's text listing of what it loaded, for the chains' devices, which nft 1.0.6 to
+     * 1.0.9 leave out of the JSON listing.
+     *
      * @return void
      *
      * @throws RuntimeException - if anything was dropped.
      */
-    private static function assertNothingDropped(array $sent, array $listed) : void
+    private static function assertNothingDropped(array $sent, array $listed, string $textListing) : void
     {
+        $textDevices = [];
+        preg_match_all('/device "([^"]+)"|devices = \{([^}]*)\}/', $textListing, $deviceMatches, PREG_SET_ORDER);
+
+        foreach ($deviceMatches as $match)
+        {
+            $names = ($match[1] !== "") ? [$match[1]] : explode(",", $match[2]);
+            array_push($textDevices, ...array_map("trim", str_replace('"', "", $names)));
+        }
+
         $listedItems = [];
         $listedStatements = [];
 
@@ -239,7 +252,8 @@ final readonly class NftNamespace
             elseif (!in_array($kind, ["metainfo", "add", "delete", "flush"], true))
             {
                 $description = self::describeItem($item);
-                $dropped[] = self::findDroppedPart($description, $item[$kind], $listedItems[$description] ?? null);
+                $listedItem = $listedItems[$description] ?? null;
+                $dropped[] = self::findDroppedPart($description, $item[$kind], $listedItem, $textDevices);
             }
         }
 
@@ -261,19 +275,38 @@ final readonly class NftNamespace
      *
      * @param array|null $listed - its definition in nft's listing, or null if it isn't listed.
      *
+     * @param string[] $textDevices - every device in nft's text listing, for a chain whose device the JSON leaves out.
+     *
      * @return string - what was dropped, e.g. "the hook of chain inet t input", or "" for nothing.
      */
-    private static function findDroppedPart(string $description, array $sent, ?array $listed) : string
+    private static function findDroppedPart(
+        string $description,
+        array $sent,
+        ?array $listed,
+        array $textDevices,
+    ) : string
     {
         $kind = explode(" ", $description)[0];
         $isCtTimeout = str_starts_with($description, "ct timeout ");
         $hasPolicy = (is_array($listed["policy"] ?? null) && count($listed["policy"]) > 0);
 
+        // A chain's or flowtable's devices. nft before 1.0.6 sends the kernel garbage for a chain's device, which some
+        // kernels reject and others accept, so the device listed has to be the one that was sent. nft 1.0.6 to 1.0.9
+        // leave a chain's device out of the JSON listing, so then it has to be in the text listing.
+        $sentDevices = (array)($sent["dev"] ?? []);
+
+        $listedDevices = isset($listed["dev"])
+            ? (array)$listed["dev"]
+            : array_values(array_intersect($sentDevices, $textDevices));
+
+        sort($sentDevices);
+        sort($listedDevices);
+
         return match (true) {
             $listed === null => $description,
             isset($sent["flags"]) && $kind === "table" && !isset($listed["flags"]) => "the flags of {$description}",
             isset($sent["hook"]) && $kind === "chain" && !isset($listed["hook"]) => "the hook of {$description}",
-            $kind === "flowtable" && count((array)($listed["dev"] ?? [])) === 0 => "the devices of {$description}",
+            $sentDevices !== $listedDevices => "the devices of {$description}",
             $isCtTimeout && !$hasPolicy => "the policy of {$description}",
             default => "",
         };

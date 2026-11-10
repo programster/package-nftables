@@ -3,6 +3,26 @@ Nftables Package
 
 [![Tests](https://github.com/programster/package-nftables/actions/workflows/tests.yml/badge.svg)](https://github.com/programster/package-nftables/actions/workflows/tests.yml)
 
+## Documentation
+* [Getting started](docs/getting-started.md): installing, a complete firewall and NAT gateway, and how it fits
+  together
+* [Rulesets](docs/rulesets.md): reset modes, loading safely, and what gets added for you
+* [Targets](docs/targets.md): telling it where the rules will be loaded, and the features that need a newer nft
+* [Tables and chains](docs/tables-and-chains.md): families, base chains (types, hooks, priorities) and regular chains
+* [Rules](docs/rules.md): rules, and the factories for common rules and matches
+* [Statements](docs/statements.md): verdicts, matches, logging, rate limits, quotas, reject, NAT, marks, synproxy,
+  transparent proxying, queueing, and adding to sets from rules (meters)
+* [Expressions](docs/expressions.md): packet headers, metadata, sets, ranges, prefixes, ports, routing lookups,
+  number generators, hashes, OS fingerprinting and SCTP chunks
+* [Named sets](docs/sets.md): allowlists, blocklists and other sets
+* [Maps and verdict maps](docs/maps.md): port forwarding and dispatching to chains with one lookup
+* [Flowtables](docs/flowtables.md): a fast path for forwarded connections
+* [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers and timeouts, synproxies and
+  security marks
+* [Errors](docs/errors.md): the exceptions, and when they're thrown
+* [Upgrading from 0.x](docs/upgrading.md)
+* [Testing](docs/testing.md): running the tests locally, on every PHP version and target, and in CI
+
 A PHP package for generating nftables rulesets as JSON, for loading with `nft --json --file`. It's built to make the
 safe thing the easy thing:
 
@@ -71,23 +91,3 @@ table inet firewall {
 
 Load the file in one go like this, and **never** run `nft flush ruleset` as a separate command first: if the load then
 failed, the machine would be left with no firewall at all. See [loading it safely](docs/rulesets.md#loading-it-safely).
-
-## Documentation
-* [Getting started](docs/getting-started.md): installing, a complete firewall and NAT gateway, and how it fits
-  together
-* [Rulesets](docs/rulesets.md): reset modes, loading safely, and what gets added for you
-* [Targets](docs/targets.md): telling it where the rules will be loaded, and the features that need a newer nft
-* [Tables and chains](docs/tables-and-chains.md): families, base chains (types, hooks, priorities) and regular chains
-* [Rules](docs/rules.md): rules, and the factories for common rules and matches
-* [Statements](docs/statements.md): verdicts, matches, logging, rate limits, quotas, reject, NAT, marks, synproxy,
-  transparent proxying, queueing, and adding to sets from rules (meters)
-* [Expressions](docs/expressions.md): packet headers, metadata, sets, ranges, prefixes, ports, routing lookups,
-  number generators, hashes, OS fingerprinting and SCTP chunks
-* [Named sets](docs/sets.md): allowlists, blocklists and other sets
-* [Maps and verdict maps](docs/maps.md): port forwarding and dispatching to chains with one lookup
-* [Flowtables](docs/flowtables.md): a fast path for forwarded connections
-* [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers and timeouts, synproxies and
-  security marks
-* [Errors](docs/errors.md): the exceptions, and when they're thrown
-* [Upgrading from 0.x](docs/upgrading.md)
-* [Testing](docs/testing.md): running the tests locally, on every PHP version and target, and in CI

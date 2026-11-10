@@ -5,7 +5,16 @@
 failed=0
 echo "PHP $(php -r 'echo PHP_VERSION;'): linting..."
 
-for file in $(find /src/src /src/testing -name "*.php")
+# Fail if there's nothing to lint (e.g. find is missing), rather than quietly linting nothing.
+files=$(find /src/src /src/testing -name "*.php")
+
+if [ -z "$files" ]
+then
+    echo "  FAIL lint: found no PHP files to lint (is find installed?)"
+    failed=1
+fi
+
+for file in $files
 do
     if ! output=$(php -l "$file" 2>&1)
     then
