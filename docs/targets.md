@@ -48,9 +48,12 @@ Pick the server's operating system release, as these also know its kernel, which
 | `ROCKY_9`, `ALMA_9`, `RHEL_9` | 1.0.9 | 5.14 |
 | `ROCKY_10`, `ALMA_10`, `RHEL_10` | 1.1.5 | 6.12 |
 
-The kernels are the oldest each release ships, e.g. Ubuntu's original kernel, not its newer HWE ones. The Rocky
-Linux, AlmaLinux and RHEL targets are for an up to date release (e.g. 8.10 for 8), as each major release updates its
-nft: the early 8.x releases had nft 0.9.3, which is older than this package supports.
+Each target is a stock install of that release, fully updated from the distribution's own repositories (e.g. with
+`apt upgrade` or `yum update`), without third-party ones such as EPEL or a PPA. The kernels are the oldest each
+release ships, e.g. Ubuntu's original kernel, not its newer HWE ones. For Rocky Linux, AlmaLinux and RHEL, fully
+updated means the latest point release (e.g. 8.10 for 8), including the features Red Hat has backported to its nft
+and kernel, as each point release updates them: the early 8.x releases had nft 0.9.3, which is older than this
+package supports. For a server with a newer nft than its release's own, use the version target for that nft.
 
 For anything else, there's a target for each nft version that's tested: `NFTABLES_0_9_8`, `NFTABLES_1_0_2`,
 `NFTABLES_1_0_4`, `NFTABLES_1_0_6`, `NFTABLES_1_0_9`, `NFTABLES_1_1_3`, `NFTABLES_1_1_5` and `NFTABLES_1_1_6`. Pick the
@@ -64,7 +67,7 @@ Everything not listed here works on every target, from nft 0.9.8 up.
 |---|---|---|
 | `TableFlag::DORMANT` | nft 1.1.3, or Rocky/AlmaLinux/RHEL 9 | Older nft silently drops the flag, so the table's rules stay on. Red Hat backported it to RHEL 9's nft 1.0.9. |
 | Chains on the ingress or egress hook | nft 1.0.6 | Older nft can't read a chain's device from JSON (0.9.8 and 1.0.4 refuse it, and 1.0.2 crashes), although its own syntax works |
-| Chains on the egress hook | Kernel 5.16 as well | The kernel needs to support the hook. Rocky/AlmaLinux/RHEL 9's nft is new enough, but their kernel isn't. |
+| Chains on the egress hook | Kernel 5.16 as well, or Rocky/AlmaLinux/RHEL 9 | The kernel needs to support the hook. Red Hat backported it to RHEL 9's kernel 5.14. |
 | A [flowtable](flowtables.md) | nft 1.0.6 | Older nft can't read a flowtable's devices from JSON (0.9.8 crashes, and 1.0.2 and 1.0.4 silently drop them) |
 | A [named map](maps.md) whose values are concatenations (e.g. an address and port) | nft 1.1.3, or Rocky/AlmaLinux/RHEL 9 | Older nft crashes on one, or silently drops the map. Red Hat backported the fix to RHEL 9's nft 1.0.9. Two maps, one for the address and one for the port, work everywhere. |
 | An [anonymous map](maps.md#anonymous-maps) whose values are concatenations | nft 1.0.2 | nft 0.9.8 can't read one from JSON |

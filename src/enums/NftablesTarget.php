@@ -15,8 +15,11 @@ namespace Programster\Nftables\Enums;
  * - The version cases are for anything else. Pick the newest one that isn't newer than the server's nft
  *   ("nft --version"). They only check the nft version, so they can't catch kernel limits.
  *
- * The Rocky Linux, AlmaLinux and RHEL cases are for an up to date release, e.g. 8.10 for 8. Their early 8.x point
- * releases shipped nft 0.9.3, which is older than this package supports.
+ * Each operating system case is for a stock install of that release, fully updated from the distribution's own
+ * repositories (e.g. with "yum update"), without any third-party ones such as EPEL or a PPA. For Rocky Linux,
+ * AlmaLinux and RHEL, that's the latest point release (e.g. 8.10 for 8), including the features Red Hat has
+ * backported to its nft and kernel. Their early 8.x point releases shipped nft 0.9.3, which is older than this package
+ * supports. For a server with a newer nft than its release's own, use the version case for its nft instead.
  */
 enum NftablesTarget
 {

@@ -100,8 +100,8 @@ name, and creates a chain with no hook, which sees no packets.
 
 ### Devices
 Chains on the ingress and egress hooks belong to one network device, which is required for them, and not allowed for
-any other hook. They need nft 1.0.6 or later, and egress also needs kernel 5.16, so the ruleset's
-[target](targets.md) has to have those:
+any other hook. They need nft 1.0.6 or later, and egress also needs kernel 5.16 (or RHEL 9's, which has it
+backported), so the ruleset's [target](targets.md) has to have those:
 
 ```php
 $netdev = new Table("edge", Family::NETDEV);

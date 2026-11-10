@@ -41,6 +41,7 @@ use Programster\Nftables\Statements\GotoStatement;
 use Programster\Nftables\Statements\JumpStatement;
 use Programster\Nftables\Statements\MangleStatement;
 use Programster\Nftables\Statements\QuotaStatement;
+use Programster\Nftables\Statements\SynproxyStatement;
 use Programster\Nftables\Table;
 use Programster\Nftables\VerdictMapElement;
 use Ramsey\Collection\Exception\InvalidArgumentException;
@@ -81,17 +82,17 @@ $testRefusesForTarget = function () use ($metainfo) : void {
 $smoke->run("Ruleset: a feature its target can't load is refused, and not added", $testRefusesForTarget);
 
 $testKernelRequirement = function () : void {
-    $netdev = new Table("n", Family::NETDEV);
-    $egress = new BaseChain("e", $netdev, ChainType::FILTER, ChainHook::EGRESS, 0, Policy::ACCEPT, "lo");
+    $table = Fixtures::createTable("t");
+    $synproxy = Rule::create(Fixtures::createInputChain($table), new SynproxyStatement(1460, 7));
 
-    // Rocky 9's nft (1.0.9) handles egress chains, but its kernel (5.14) is too old.
-    $addToRocky9 = function () use ($egress) : void {
-        (new Ruleset(NftablesTarget::ROCKY_9))->addChain($egress);
+    // Rocky 8's nft (1.0.4) handles a synproxy, but its kernel (4.18) doesn't have one, even with Red Hat's backports.
+    $addToRocky8 = function () use ($synproxy) : void {
+        (new Ruleset(NftablesTarget::ROCKY_8))->addRule($synproxy);
     };
 
-    SmokeTestRunner::expectException(UnsupportedFeatureException::class, $addToRocky9, "needs kernel 5.16");
-    (new Ruleset(NftablesTarget::NFTABLES_1_0_9))->addChain($egress);
-    (new Ruleset(NftablesTarget::DEBIAN_12))->addChain($egress);
+    SmokeTestRunner::expectException(UnsupportedFeatureException::class, $addToRocky8, "needs kernel 5.3");
+    (new Ruleset(NftablesTarget::NFTABLES_1_0_4))->addRule($synproxy);
+    (new Ruleset(NftablesTarget::ROCKY_9))->addRule($synproxy);
 };
 
 $smoke->run("Ruleset: an OS target also checks its kernel, and a version target doesn't", $testKernelRequirement);

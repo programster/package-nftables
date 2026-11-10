@@ -218,7 +218,8 @@ $filter = Priority::FILTER;
 $features = [];
 $features[] = ["the dormant table flag", "1.1.3", "", $rhel9, $createDormantTable, ["flags dormant"]];
 $features[] = ["a netdev ingress chain", "1.0.6", "", [], $createDeviceChain(Family::NETDEV, ChainHook::INGRESS), []];
-$features[] = ["a netdev egress chain", "1.0.6", "5.16", [], $createDeviceChain(Family::NETDEV, ChainHook::EGRESS), []];
+$egressChain = $createDeviceChain(Family::NETDEV, ChainHook::EGRESS);
+$features[] = ["a netdev egress chain", "1.0.6", "5.16", $rhel9, $egressChain, []];
 $features[] = ["an inet ingress chain", "1.0.6", "", [], $createDeviceChain(Family::INET, ChainHook::INGRESS), []];
 
 // nft 1.1.5 and later quote the devices.

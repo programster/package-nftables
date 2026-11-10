@@ -125,7 +125,8 @@ final class Compatibility
         // Older nft can't read a chain's device from JSON (0.9.8 and 1.0.4 fail, and 1.0.2 crashes).
         $device = new FeatureRequirement("A chain on the ingress or egress hook", "1.0.6", "", $isDeviceChain);
 
-        $egress = new FeatureRequirement("A chain on the egress hook", "1.0.6", "5.16", $isEgressChain);
+        // Red Hat backported the hook to RHEL 9's kernel 5.14 (CONFIG_NETFILTER_EGRESS, in a fully updated 9.x).
+        $egress = new FeatureRequirement("A chain on the egress hook", "1.0.6", "5.16", $isEgressChain, ...$rhel9);
 
         // Older nft can't read a flowtable's devices from JSON, as for a chain's (0.9.8 crashes, and 1.0.2 and 1.0.4
         // silently drop them).
