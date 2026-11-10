@@ -160,18 +160,51 @@ final class SmokeTestRunner
 
 
     /**
+     * Check that a list contains a value (compared with ===), e.g. that nft's listing contains a line.
+     *
+     * @param array $list - the list to look in.
+     *
+     * @param mixed $value - the value it should contain.
+     *
+     * @param string $what - what is being checked, to show if it fails.
+     *
+     * @return void
+     *
+     * @throws Exception - if it doesn't contain it.
+     */
+    public static function assertContains(array $list, mixed $value, string $what) : void
+    {
+        if (!in_array($value, $list, true))
+        {
+            $flags = JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR;
+            $valueJson = json_encode($value, $flags);
+            $listJson = json_encode(array_values($list), $flags);
+            throw new Exception("{$what}: expected {$valueJson} in {$listJson}");
+        }
+    }
+
+
+    /**
      * Check that a callback throws a specific type of exception.
      *
-     * @param string $exceptionClass - the class of exception that should be thrown.
+     * @param string $exceptionClass - the class (or interface) of exception that should be thrown.
      *
      * @param callable $callback - the code that should throw it.
+     *
+     * @param string $messageContains - optionally, text the exception's message must contain, for when the same
+     * class of exception can be thrown for different reasons. Defaults to "", for any message.
      *
      * @return void
      *
      * @throws Throwable - if the callback throws a different exception, it's rethrown.
-     * @throws Exception - if the callback doesn't throw at all.
+     *
+     * @throws Exception - if the callback doesn't throw at all, or the message doesn't contain $messageContains.
      */
-    public static function expectException(string $exceptionClass, callable $callback) : void
+    public static function expectException(
+        string $exceptionClass,
+        callable $callback,
+        string $messageContains = "",
+    ) : void
     {
         $threwExpectedException = false;
 
@@ -184,6 +217,12 @@ final class SmokeTestRunner
             if (!($e instanceof $exceptionClass))
             {
                 throw $e;
+            }
+
+            if (!str_contains($e->getMessage(), $messageContains))
+            {
+                $message = "Expected the message to contain \"{$messageContains}\", but it was: {$e->getMessage()}";
+                throw new Exception($message);
             }
 
             $threwExpectedException = true;

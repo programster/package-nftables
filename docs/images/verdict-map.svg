@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="360" viewBox="0 0 820 360" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>A verdict map sending packets to a verdict or a chain</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <rect width="820" height="360" fill="#ffffff"/>
+  <text x="410" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#0f172a">tcp dport vmap @services: the packet's key picks what happens to it</text>
+
+  <rect x="20" y="150" width="150" height="50" rx="6" fill="#e0f2fe" stroke="#0369a1"/>
+  <text x="95" y="171" text-anchor="middle" fill="#0c4a6e">packet in the</text>
+  <text x="95" y="189" text-anchor="middle" fill="#0c4a6e">input chain</text>
+  <line x1="170" y1="175" x2="208" y2="175" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="189" y="166" text-anchor="middle" fill="#475569" font-size="11">port</text>
+
+  <!-- map -->
+  <rect x="210" y="70" width="230" height="28" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="222" y="89" font-weight="bold" fill="#0f172a">map services</text>
+  <text x="430" y="89" text-anchor="end" fill="#475569" font-size="12">port : verdict</text>
+  <rect x="210" y="98" width="230" height="40" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="222" y="123" fill="#334155">22 : accept</text>
+  <rect x="210" y="138" width="230" height="40" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="222" y="163" fill="#334155">25 : drop</text>
+  <rect x="210" y="178" width="230" height="40" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="222" y="203" fill="#334155">80 : jump web</text>
+  <rect x="210" y="218" width="230" height="40" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="222" y="243" fill="#334155">443 : jump web</text>
+  <rect x="210" y="258" width="230" height="40" fill="#fef9c3" stroke="#ca8a04" stroke-dasharray="4 3"/>
+  <text x="222" y="283" fill="#713f12">anything else: not in the map</text>
+
+  <!-- outcomes -->
+  <line x1="440" y1="118" x2="560" y2="88" stroke="#15803d" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="562" y="66" width="230" height="40" rx="6" fill="#dcfce7" stroke="#15803d"/>
+  <text x="677" y="91" text-anchor="middle" fill="#14532d">accepted (SSH)</text>
+
+  <line x1="440" y1="158" x2="560" y2="146" stroke="#b91c1c" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="562" y="126" width="230" height="40" rx="6" fill="#fee2e2" stroke="#b91c1c"/>
+  <text x="677" y="151" text-anchor="middle" fill="#7f1d1d">dropped (SMTP)</text>
+
+  <line x1="440" y1="198" x2="560" y2="208" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="238" x2="560" y2="214" stroke="#6d28d9" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="562" y="186" width="230" height="48" rx="6" fill="#ede9fe" stroke="#6d28d9"/>
+  <text x="677" y="206" text-anchor="middle" fill="#4c1d95">carries on in the web chain,</text>
+  <text x="677" y="224" text-anchor="middle" fill="#4c1d95">then comes back</text>
+
+  <line x1="440" y1="278" x2="560" y2="282" stroke="#ca8a04" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="562" y="258" width="230" height="48" rx="6" fill="#fef9c3" stroke="#ca8a04"/>
+  <text x="677" y="278" text-anchor="middle" fill="#713f12">nothing happens: carries on</text>
+  <text x="677" y="296" text-anchor="middle" fill="#713f12">with the next rule</text>
+
+  <text x="410" y="338" text-anchor="middle" fill="#475569">One rule replaces a rule per port, and nftables finds the port in one lookup.</text>
+</svg>

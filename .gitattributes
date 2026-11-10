@@ -1,0 +1,7 @@
+# Leave the tests, docs and repository tooling out of the archives Composer downloads (e.g. "composer require"), so a
+# project's vendor/ only gets the code. They're still in the repository, and in a "--prefer-source" install.
+/.github export-ignore
+/docs export-ignore
+/testing export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore

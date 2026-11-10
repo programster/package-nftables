@@ -1,101 +1,93 @@
 Nftables Package
 ================
 
-A PHP package to help generate Nftables rules in JSON form.
+[![Tests](https://github.com/programster/package-nftables/actions/workflows/tests.yml/badge.svg)](https://github.com/programster/package-nftables/actions/workflows/tests.yml)
 
+A PHP package for generating nftables rulesets as JSON, for loading with `nft --json --file`. It's built to make the
+safe thing the easy thing:
 
-## Building a complete ruleset
+* **Reloading is atomic.** A ruleset clears out its old rules inside the same file, so a load that fails changes
+  nothing, and reloading never stacks up duplicate rules. Tables owned by other software (fail2ban, Docker) are left
+  alone by default.
+* **Mistakes are caught in PHP**, with a message that says what's wrong, rather than later in nft: a port above 65535,
+  a host CIDR where nft needs a network, a NAT rule in a filter chain, a jump to another table, and so on.
+* **Risky choices are explicit.** Flushing every table on the machine, a chain's policy, what happens to queued
+  packets when nothing's listening, and which packets a rate limit or quota matches all have to be chosen, rather than
+  defaulting to something surprising. A set that rules add to must have a size, so traffic can't fill memory.
+* **It knows where the rules will be loaded.** Tell it the server's OS (e.g. Debian 11, Ubuntu 22.04 or Rocky Linux 8)
+  or nft version, and it refuses anything that server's nft can't load, or would silently ignore. Without one, it
+  assumes the oldest supported, so the rules load anywhere. See [targets](docs/targets.md).
+* **It's tested against real nft**: the nft of every supported OS, from 0.9.8 (Debian 11) to 1.1.6 (Ubuntu 26.04), and
+  PHP 8.2 to 8.5, including every example in the docs.
 
-`NftablesRuleset` puts together a whole ruleset file, ready to be loaded with `nft --json --file`. It takes care of
-the parts that are easy to get wrong by hand:
+## Installing
+Version 1.0 is in alpha, so ask for it explicitly:
 
-* The metainfo block always comes first.
-* The old rules are cleared out first, in the same file, so reloading never stacks up duplicate rules.
-* Tables come before chains, and chains before rules, whatever order you add them in.
+```bash
+composer require programster/nftables:^1.0@alpha
+```
 
-Adding a rule adds its chain and table for you, so you only need `addChain()` for a chain that has no rules (e.g. one
-that exists just for its drop policy). Rules are evaluated in the order you add them.
+Upgrading from 0.x? See [upgrading](docs/upgrading.md): nearly everything has been renamed, and a few things behave
+differently.
 
+## Example
 ```php
-use Programster\Nftables\NftablesChain;
-use Programster\Nftables\NftablesRule;
-use Programster\Nftables\NftablesRuleset;
-use Programster\Nftables\NftablesTable;
-use Programster\Nftables\Enums\NftablesChainHook;
-use Programster\Nftables\Enums\NftablesChainType;
-use Programster\Nftables\Enums\NftablesFamily;
-use Programster\Nftables\Enums\NftablesPolicy;
-use Programster\Nftables\Enums\NftablesPriority;
+use Programster\Nftables\BaseChain;
+use Programster\Nftables\Enums\ChainHook;
+use Programster\Nftables\Enums\ChainType;
+use Programster\Nftables\Enums\Family;
+use Programster\Nftables\Enums\Policy;
+use Programster\Nftables\Enums\Priority;
+use Programster\Nftables\PortSet;
+use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Ruleset;
+use Programster\Nftables\Table;
 
-$table = new NftablesTable("myFirewall", NftablesFamily::INET);
+$table = new Table("firewall", Family::INET);
+$input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
 
-$input = new NftablesChain(
-    "input",
-    $table,
-    NftablesChainType::FILTER,
-    NftablesChainHook::INPUT,
-    NftablesPriority::NF_IP_PRI_FILTER,
-    NftablesPolicy::DROP,
-);
+$ruleset = new Ruleset();
+$ruleset->addRule(RuleFactory::createAcceptInterface($input, "lo"));
+$ruleset->addRule(RuleFactory::createAcceptPort($input, "eth0", new PortSet(80, 443)));
+$ruleset->addRule(RuleFactory::createAcceptPort($input, "eth0", 22, sourceAddress: "198.51.100.0/24"));
 
-$ruleset = new NftablesRuleset();
-$ruleset->addRule(new NftablesRule($input, [["accept" => null]], "allow everything (for now)"));
-
-file_put_contents("/etc/my-firewall/ruleset.json", $ruleset->toJson());
+file_put_contents("/etc/firewall/ruleset.json", $ruleset->toJson());
 ```
 
 ```bash
-nft --json --file /etc/my-firewall/ruleset.json
+nft --json --file /etc/firewall/ruleset.json
 ```
 
-Adding the same table or chain twice (even as separate objects) only includes it once. Adding a *different* chain with
-the same name to the same table throws an `ExceptionChainConflict`.
-
-
-### Reset modes
-
-The constructor takes an `NftablesRulesetResetMode`, which decides what is cleared out before the new rules go in:
-
-* `REPLACE_OWN_TABLES` (the default): deletes and recreates only the tables in this ruleset. Tables created by other
-  software, such as fail2ban or Docker, are left alone. This is the right choice almost all the time.
-* `FLUSH_ENTIRE_RULESET`: flushes every table on the machine first, including ones this ruleset knows nothing about.
-  Only use it if this ruleset is meant to be the only thing using nftables on the machine. Anything else's rules
-  (e.g. fail2ban bans or Docker's networking) are wiped until that software adds them again.
-
-```php
-$ruleset = new NftablesRuleset(NftablesRulesetResetMode::FLUSH_ENTIRE_RULESET);
+```nft
+table inet firewall {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iifname "lo" accept
+		iifname "eth0" tcp dport { 80, 443 } accept
+		iifname "eth0" tcp dport 22 ip saddr 198.51.100.0/24 accept
+	}
+}
 ```
 
-With `REPLACE_OWN_TABLES`:
+Load the file in one go like this, and **never** run `nft flush ruleset` as a separate command first: if the load then
+failed, the machine would be left with no firewall at all. See [loading it safely](docs/rulesets.md#loading-it-safely).
 
-* Give your tables distinctive names. If your ruleset has an `ip nat` or `ip filter` table, it replaces the tables of
-  the same name that iptables-nft (and so Docker) uses.
-* A table you remove from your ruleset, or rename, isn't deleted on the next load, as the ruleset no longer mentions
-  it. Delete it once by hand (`nft delete table <family> <name>`).
-
-
-### Load it in one go
-
-nft applies a single `--file` as one atomic transaction. If any part of the file fails, nothing changes and the
-previous rules stay in place. That only protects you if the clear out and the new rules are in the same file, which
-is what `NftablesRuleset` does for you. So:
-
-* **Don't** run `nft flush ruleset` (or delete tables) as a separate command before loading the file. If the load
-  then fails, e.g. because a PHP warning ended up in the JSON, the machine is left with no firewall at all.
-* **Do** load the file with a single `nft --json --file ruleset.json`, and check its exit status.
-
-
-## Running the tests
-
-```bash
-composer install
-composer test                               # or: php testing/main.php
-NFTABLES_TEST_ONLY="FLUSH" composer test    # only the tests whose name contains FLUSH
-```
-
-The tests are plain PHP scripts in `testing/tests/`, with no test framework needed. A test fails if it throws, fails
-a check, or raises a PHP warning or deprecation. It exits with a non-zero code if anything fails.
-
-Some tests load rulesets into real nft. They run inside a throwaway network namespace (`unshare -rn`), so they need
-no root and never touch the host's rules. They're skipped, and listed as skipped, where nft or unprivileged user
-namespaces aren't available.
+## Documentation
+* [Getting started](docs/getting-started.md): installing, a complete firewall and NAT gateway, and how it fits
+  together
+* [Rulesets](docs/rulesets.md): reset modes, loading safely, and what gets added for you
+* [Targets](docs/targets.md): telling it where the rules will be loaded, and the features that need a newer nft
+* [Tables and chains](docs/tables-and-chains.md): families, base chains (types, hooks, priorities) and regular chains
+* [Rules](docs/rules.md): rules, and the factories for common rules and matches
+* [Statements](docs/statements.md): verdicts, matches, logging, rate limits, quotas, reject, NAT, marks, synproxy,
+  transparent proxying, queueing, and adding to sets from rules (meters)
+* [Expressions](docs/expressions.md): packet headers, metadata, sets, ranges, prefixes, ports, routing lookups,
+  number generators, hashes, OS fingerprinting and SCTP chunks
+* [Named sets](docs/sets.md): allowlists, blocklists and other sets
+* [Maps and verdict maps](docs/maps.md): port forwarding and dispatching to chains with one lookup
+* [Flowtables](docs/flowtables.md): a fast path for forwarded connections
+* [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers and timeouts, synproxies and
+  security marks
+* [Errors](docs/errors.md): the exceptions, and when they're thrown
+* [Upgrading from 0.x](docs/upgrading.md)
+* [Testing](docs/testing.md): running the tests locally, on every PHP version and target, and in CI

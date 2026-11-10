@@ -1,0 +1,64 @@
+# Lints every file and runs the tests on every supported version of PHP (testing/run-all-php-versions.sh), and on every
+# supported NftablesTarget, with each operating system's own nft (testing/run-all-targets.sh). Both use the same
+# scripts as running them locally, which test each version or target in its own Docker container. Those include the
+# tests that load rulesets into real nft, each in its own throwaway network namespace.
+# The README's "Tests" badge shows the result of the latest run on the default branch.
+name: Tests
+
+on:
+    # Pushes to the main branch (not work-in-progress branches), and every tag, e.g. a new release.
+    push:
+        branches:
+            - main
+        tags:
+            - "*"
+    # Pull requests into the main branch, so they are tested before being merged.
+    pull_request:
+        branches:
+            - main
+    # Adds a "Run workflow" button on the Actions tab, to run the tests by hand on any branch.
+    workflow_dispatch:
+
+# The tests only need to read the code.
+permissions:
+    contents: read
+
+jobs:
+    php-versions:
+        name: Lint and tests on PHP 8.2, 8.3, 8.4 and 8.5
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Check out the code
+              uses: actions/checkout@v5
+
+            # The tests use vendor/autoload.php. The runner's own PHP is only used to run Composer.
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --no-progress --prefer-dist
+
+            # Ubuntu's AppArmor blocks unprivileged user namespaces, which the nft tests create with "unshare -rn"
+            # (even inside the containers). This runner is thrown away after the job, so it's safe to allow them.
+            - name: Allow unprivileged user namespaces
+              run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+            - name: Run lint and the tests on every supported version of PHP
+              run: sh testing/run-all-php-versions.sh
+
+    targets:
+        name: Tests on every target's nft (Debian, Ubuntu and Rocky Linux)
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+
+        steps:
+            - name: Check out the code
+              uses: actions/checkout@v5
+
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --no-progress --prefer-dist
+
+            - name: Allow unprivileged user namespaces
+              run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+            - name: Run lint and the tests on every target
+              run: sh testing/run-all-targets.sh

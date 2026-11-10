@@ -41,6 +41,12 @@ if ($only !== "" && $smoke->getNumPassed() === 0 && count($failures) === 0)
     $failures[] = "NFTABLES_TEST_ONLY: no test's name contains \"{$only}\", so nothing was run.";
 }
 
+// Where nft is known to be available (e.g. the Docker runs), a skipped nft test means something is wrong.
+if (getenv("NFTABLES_TEST_REQUIRE_NFT") === "1" && count($smoke->getSkipped()) > 0)
+{
+    $failures[] = "NFTABLES_TEST_REQUIRE_NFT: tests were skipped, but nft should be available here.";
+}
+
 printf("PHP %s: %d passed, %d failed\n", PHP_VERSION, $smoke->getNumPassed(), count($failures));
 
 foreach ($failures as $failure)

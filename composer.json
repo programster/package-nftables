@@ -1,7 +1,7 @@
 {
     "name": "programster/nftables",
     "type": "library",
-    "description": "A package to make it eaier to generate nftables JSON.",
+    "description": "A package for generating nftables rulesets as JSON, safely.",
     "keywords": ["nftables"],
     "homepage": "https://github.com/programster/package-nftables",
     "license": "MIT",
@@ -15,13 +15,18 @@
     ],
     "require": {
         "php": ">=8.2.0",
-        "mlocati/ip-lib": "^1.22"
+        "mlocati/ip-lib": "^1.22",
+        "ramsey/collection": "^2.0"
     },
     "autoload": {
         "psr-4": {
             "Programster\\Nftables\\": "src/",
             "Programster\\Nftables\\Exceptions\\": "src/exceptions/",
-            "Programster\\Nftables\\Enums\\": "src/enums/"
+            "Programster\\Nftables\\Collections\\": "src/collections/",
+            "Programster\\Nftables\\Enums\\": "src/enums/",
+            "Programster\\Nftables\\Expressions\\": "src/expressions/",
+            "Programster\\Nftables\\Objects\\": "src/objects/",
+            "Programster\\Nftables\\Statements\\": "src/statements/"
         }
     },
     "autoload-dev": {
