@@ -16,6 +16,7 @@
 
 use Programster\Nftables\AnonymousMap;
 use Programster\Nftables\BaseChain;
+use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
 use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\ChainHook;
@@ -33,12 +34,14 @@ use Programster\Nftables\Enums\OsfKey;
 use Programster\Nftables\Enums\OsfTtlCheck;
 use Programster\Nftables\Enums\PayloadField;
 use Programster\Nftables\Enums\Policy;
+use Programster\Nftables\Enums\PortForwardMapLayout;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Enums\SctpChunk;
 use Programster\Nftables\Enums\SctpChunkField;
 use Programster\Nftables\Enums\SetType;
 use Programster\Nftables\Enums\SetUpdateOperation;
+use Programster\Nftables\Enums\SocketKey;
 use Programster\Nftables\Enums\SynproxyFlag;
 use Programster\Nftables\Enums\TableFlag;
 use Programster\Nftables\Enums\Verdict;
@@ -47,24 +50,31 @@ use Programster\Nftables\Expressions\ConcatExpression;
 use Programster\Nftables\Expressions\OsfExpression;
 use Programster\Nftables\Expressions\PayloadExpression;
 use Programster\Nftables\Expressions\SctpChunkExpression;
+use Programster\Nftables\Expressions\SocketExpression;
 use Programster\Nftables\Flowtable;
 use Programster\Nftables\MapElement;
 use Programster\Nftables\MatchFactory;
 use Programster\Nftables\NamedMap;
 use Programster\Nftables\NamedSet;
+use Programster\Nftables\Objects\CtExpectation;
 use Programster\Nftables\Objects\CtTimeout;
 use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
+use Programster\Nftables\PortForward;
 use Programster\Nftables\Rule;
 use Programster\Nftables\RuleFactory;
 use Programster\Nftables\Ruleset;
+use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
 use Programster\Nftables\Statements\DnatStatement;
+use Programster\Nftables\Statements\DupStatement;
+use Programster\Nftables\Statements\FwdStatement;
 use Programster\Nftables\Statements\LimitStatement;
 use Programster\Nftables\Statements\MangleStatement;
 use Programster\Nftables\Statements\MatchStatement;
 use Programster\Nftables\Statements\SetUpdateStatement;
+use Programster\Nftables\Statements\Statement;
 use Programster\Nftables\Statements\SynproxyStatement;
 use Programster\Nftables\Statements\TproxyStatement;
 use Programster\Nftables\Table;
@@ -236,6 +246,25 @@ $features[] = [
     ["elements = { 2222 : 10.0.0.2 . 22 }", "dnat ip to tcp dport map @forwards"],
 ];
 
+$createOneMapPortForward = function (NftablesTarget $target) : Ruleset {
+    $table = new Table("t", Family::IP);
+    $nat = new BaseChain("nat", $table, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT, Policy::ACCEPT);
+    $forwards = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22)]);
+    $layout = PortForwardMapLayout::ONE_MAP;
+    $ruleset = new Ruleset($target);
+    $ruleset->addRule(RuleFactory::createMapPortForward($nat, "eth0", "forwards", $layout, IpVersion::IPV4, $forwards));
+    return $ruleset;
+};
+
+$features[] = [
+    "a port forward from one map",
+    "1.1.3",
+    "",
+    $rhel9,
+    $createOneMapPortForward,
+    ['iifname "eth0" dnat ip to tcp dport map @forwards'],
+];
+
 $features[] = [
     "an anonymous map of concatenations",
     "1.0.2",
@@ -316,6 +345,73 @@ $features[] = [
     $createFilterRules($input, $filter, $createSctpChunks),
     ["sctp chunk init exists accept", "sctp chunk data tsn 5 accept"],
 ];
+
+$createConnectionLimitMeter = function (Table $table) use ($saddr) : array {
+    // A set whose elements carry a connection limit can't have a timeout.
+    $connections = NamedSet::create($table, "connections", SetType::IPV4_ADDR)->withSize(1000);
+    $overLimit = new ConnectionLimitStatement(20, LimitMatch::OVER_LIMIT);
+    return [[new SetUpdateStatement(SetUpdateOperation::ADD, $connections, $saddr, $overLimit), Verdict::DROP]];
+};
+
+$features[] = [
+    "a connection limit per address (a meter)",
+    "1.0.6",
+    "",
+    [],
+    $createFilterRules($input, $filter, $createConnectionLimitMeter),
+    ["add @connections { ip saddr ct count over 20 } drop"],
+];
+
+$createCtExpectation = function (Table $table) : array {
+    $expectation = new CtExpectation("data", $table, IpVersion::IPV4, Protocol::TCP, 2021, 60, 12);
+    return [[MatchFactory::createDestinationPorts(Protocol::TCP, 21), $expectation->createStatement()]];
+};
+
+$features[] = [
+    "a ct expectation",
+    "1.0.9",
+    "5.3",
+    [],
+    $createFilterRules($input, $filter, $createCtExpectation),
+    ["protocol tcp", "dport 2021", "timeout 1m", "size 12", 'tcp dport 21 ct expectation set "data"'],
+];
+
+// Each creates a rule that matches a key of a socket.
+$createSocketMatch = function (SocketKey $key, int $value) : Closure {
+    $create = function (Table $table) use ($key, $value) : array {
+        return [[new MatchStatement(new SocketExpression($key), Operator::EQUALS, $value), Verdict::ACCEPT]];
+    };
+
+    return $create;
+};
+
+$prerouting = ChainHook::PREROUTING;
+$mangle = Priority::MANGLE;
+$socketMark = $createFilterRules($prerouting, $mangle, $createSocketMatch(SocketKey::MARK, 5));
+$features[] = ["a socket's mark", "0.9.8", "4.19", [], $socketMark, ["socket mark 0x00000005 accept"]];
+$socketWildcard = $createFilterRules($prerouting, $mangle, $createSocketMatch(SocketKey::WILDCARD, 1));
+$features[] = ["a socket's wildcard check", "0.9.8", "5.6", [], $socketWildcard, ["socket wildcard 1 accept"]];
+
+// Each creates a rule in a netdev ingress chain on eth0.
+$createNetdevRule = function (Statement $statement) : Closure {
+    $create = function (NftablesTarget $target) use ($statement) : Ruleset {
+        $table = new Table("t", Family::NETDEV);
+        $chain = new BaseChain("in", $table, ChainType::FILTER, ChainHook::INGRESS, 0, Policy::ACCEPT, "eth0");
+        $ruleset = new Ruleset($target);
+        $ruleset->addRule(Rule::create($chain, $statement));
+        return $ruleset;
+    };
+
+    return $create;
+};
+
+$dupToDevice = $createNetdevRule(DupStatement::createToDevice("eth1"));
+$features[] = ["dup to a device (in a netdev chain)", "1.0.6", "", [], $dupToDevice, ['dup to "eth1"']];
+$fwdToDevice = $createNetdevRule(FwdStatement::createToDevice("eth1"));
+$features[] = ["fwd to a device (in a netdev chain)", "1.0.6", "", [], $fwdToDevice, ['fwd to "eth1"']];
+$fwdToAddress = $createNetdevRule(FwdStatement::createToAddress("eth1", "10.0.0.9"));
+$fwdToAddressLines = ['fwd ip to 10.0.0.9 device "eth1"'];
+$features[] = ["fwd to an address (in a netdev chain)", "1.0.6", "", [], $fwdToAddress, $fwdToAddressLines];
 
 $registerCompatibilityTests = function (NftNamespace $nft) use ($smoke, $features) : void {
     $target = TestTarget::detect();

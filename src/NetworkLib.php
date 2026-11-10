@@ -19,6 +19,9 @@ final class NetworkLib
     private const MIN_PORT = 1;
     private const MAX_PORT = 65535;
 
+    // The kernel's limit for an interface name, which includes a terminating null byte.
+    private const MAX_DEVICE_BYTES = 15;
+
 
     private function __construct()
     {
@@ -143,6 +146,25 @@ final class NetworkLib
         if ($port < self::MIN_PORT || $port > self::MAX_PORT)
         {
             throw new BadArgumentException("A port must be between 1 and 65535, not {$port}.");
+        }
+    }
+
+
+    /**
+     * Check that a network device's name could be valid: from 1 to 15 bytes, the kernel's limit.
+     *
+     * @param string $device - the name, e.g. "eth0".
+     *
+     * @return void
+     *
+     * @throws BadArgumentException - if it's empty or too long.
+     */
+    public static function assertValidDeviceName(string $device) : void
+    {
+        if ($device === "" || strlen($device) > self::MAX_DEVICE_BYTES)
+        {
+            $message = "A device name must be from 1 to " . self::MAX_DEVICE_BYTES . " bytes long, not \"{$device}\".";
+            throw new BadArgumentException($message);
         }
     }
 }

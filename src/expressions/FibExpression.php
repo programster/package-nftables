@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Expressions;
 
+use Programster\Nftables\Collections\FibFlagCollection;
 use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
 use Programster\Nftables\Exceptions\BadArgumentException;
@@ -17,8 +18,8 @@ final readonly class FibExpression implements Expression
 {
     private FibResult $m_result;
 
-    /** @var string[] - the flags' values, without duplicates. */
-    private array $m_flags;
+    // Without duplicates.
+    private FibFlagCollection $m_flags;
 
 
     /**
@@ -34,7 +35,15 @@ final readonly class FibExpression implements Expression
      */
     public function __construct(FibResult $result, FibFlag ...$flags)
     {
-        $values = array_values(array_unique(array_column($flags, "value")));
+        // Keyed by value, to leave out duplicates.
+        $uniqueFlags = [];
+
+        foreach ($flags as $flag)
+        {
+            $uniqueFlags[$flag->value] = $flag;
+        }
+
+        $values = array_keys($uniqueFlags);
         $addresses = array_intersect($values, [FibFlag::SADDR->value, FibFlag::DADDR->value]);
         $interfaces = array_intersect($values, [FibFlag::IIF->value, FibFlag::OIF->value]);
 
@@ -45,13 +54,13 @@ final readonly class FibExpression implements Expression
         }
 
         $this->m_result = $result;
-        $this->m_flags = $values;
+        $this->m_flags = new FibFlagCollection(array_values($uniqueFlags));
     }
 
 
     public function toJsonValue() : array
     {
-        return ["fib" => ["result" => $this->m_result->value, "flags" => $this->m_flags]];
+        return ["fib" => ["result" => $this->m_result->value, "flags" => $this->m_flags->column("value")]];
     }
 
 

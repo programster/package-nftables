@@ -10,15 +10,16 @@ Nftables Package
 * [Targets](docs/targets.md): telling it where the rules will be loaded, and the features that need a newer nft
 * [Tables and chains](docs/tables-and-chains.md): families, base chains (types, hooks, priorities) and regular chains
 * [Rules](docs/rules.md): rules, and the factories for common rules and matches
-* [Statements](docs/statements.md): verdicts, matches, logging, rate limits, quotas, reject, NAT, marks, synproxy,
-  transparent proxying, queueing, and adding to sets from rules (meters)
+* [Statements](docs/statements.md): verdicts, matches, logging, rate limits, quotas, connection limits, reject, NAT,
+  marks, synproxy, transparent proxying, queueing, adding to sets from rules (meters), and copying and forwarding
+  packets
 * [Expressions](docs/expressions.md): packet headers, metadata, sets, ranges, prefixes, ports, routing lookups,
-  number generators, hashes, OS fingerprinting and SCTP chunks
+  sockets, IPsec, number generators, hashes, OS fingerprinting and SCTP chunks
 * [Named sets](docs/sets.md): allowlists, blocklists and other sets
 * [Maps and verdict maps](docs/maps.md): port forwarding and dispatching to chains with one lookup
 * [Flowtables](docs/flowtables.md): a fast path for forwarded connections
-* [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers and timeouts, synproxies and
-  security marks
+* [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers, timeouts and expectations,
+  synproxies and security marks
 * [Errors](docs/errors.md): the exceptions, and when they're thrown
 * [Upgrading from 0.x](docs/upgrading.md)
 * [Testing](docs/testing.md): running the tests locally, on every PHP version and target, and in CI

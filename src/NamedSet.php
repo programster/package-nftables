@@ -15,6 +15,7 @@ use Programster\Nftables\Expressions\Expression;
 use Programster\Nftables\Expressions\ExpressionLib;
 use Programster\Nftables\Expressions\PrefixExpression;
 use Programster\Nftables\Expressions\SetReference;
+use Programster\Nftables\Expressions\TimedElement;
 
 /**
  * A named set of values (e.g. addresses to block), which rules match against with getReference(). Unlike an anonymous
@@ -89,6 +90,11 @@ final readonly class NamedSet implements TableItem
         if (!isset($uniqueFlags[SetFlag::INTERVAL->value]) && ExpressionLib::isAnyInterval(...$elements))
         {
             throw new BadArgumentException("A set needs the INTERVAL flag to hold ranges or prefixes.");
+        }
+
+        if ($timeoutSeconds === 0 && self::hasTimedElement(...$elements))
+        {
+            throw new BadArgumentException("A set needs a timeout (see withTimeout()) for its elements to have one.");
         }
 
         if ($timeoutSeconds < 0 || $maxElements < 0)
@@ -221,7 +227,8 @@ final readonly class NamedSet implements TableItem
      * @return NamedSet
      *
      * @throws BadArgumentException - if an element is a range or prefix and the set doesn't have the INTERVAL flag, a
-     * plain string starts with "@", or there are more elements than the set's size.
+     * plain string starts with "@", there are more elements than the set's size, or an element is a TimedElement and
+     * the set has no timeout (so call withTimeout() first).
      */
     public function withElements(Expression|string|int ...$elements) : NamedSet
     {
@@ -311,6 +318,26 @@ final readonly class NamedSet implements TableItem
         }
 
         return ["set" => $set];
+    }
+
+
+    /**
+     * Check whether any of some elements has a timeout of its own.
+     *
+     * @param Expression|string|int ...$elements - the elements.
+     *
+     * @return bool
+     */
+    private static function hasTimedElement(Expression|string|int ...$elements) : bool
+    {
+        $found = false;
+
+        foreach ($elements as $element)
+        {
+            $found = $found || $element instanceof TimedElement;
+        }
+
+        return $found;
     }
 
 

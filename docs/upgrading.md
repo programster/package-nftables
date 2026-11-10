@@ -125,9 +125,10 @@ Most of them now take a `MatchMode`, to negate them, and there are new ones: `cr
 New in 1.0, and covered in the rest of the docs: [targets](targets.md),
 [regular chains](tables-and-chains.md#regular-chains) with jumps and gotos, [named sets](sets.md),
 [maps and verdict maps](maps.md), [flowtables](flowtables.md), [named objects](objects.md) (counters, quotas, limits,
-conntrack helpers and timeouts, synproxies and security marks), table flags, the bridge, ARP and netdev families, and
-the [statements](statements.md) and [expressions](expressions.md) beyond matching and NAT: reject, log, counter,
-limit, quota, queue, notrack, marks, snat and redirect, synproxy, transparent proxying, adding to sets from rules
-(meters), existence checks, fib and rt lookups, IPv6 extension headers, TCP options and SCTP chunks, number
-generators and hashes, OS fingerprinting, and rules for spotting spoofed packets, clamping the MSS and offloading to a
-flowtable.
+conntrack helpers, timeouts and expectations, synproxies and security marks), table flags, the bridge, ARP and netdev
+families, and the [statements](statements.md) and [expressions](expressions.md) beyond matching and NAT: reject,
+log, counter, limit, quota, connection limits, queue, notrack, marks, snat and redirect, synproxy, transparent
+proxying, adding to sets from rules (meters), dup and fwd, existence checks, fib and rt lookups, sockets, IPsec,
+IPv6 extension headers, TCP options and SCTP chunks, number generators and hashes, OS fingerprinting, and rules for
+spotting spoofed packets, clamping the MSS, offloading to a flowtable, port forwarding from a map and accepting port
+forwards.

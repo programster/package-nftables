@@ -4,6 +4,7 @@
 - [Counters, quotas and limits](#counters-quotas-and-limits)
 - [Conntrack helpers](#conntrack-helpers)
 - [Conntrack timeouts](#conntrack-timeouts)
+- [Conntrack expectations](#conntrack-expectations)
 - [Synproxies](#synproxies)
 - [Security marks](#security-marks)
 
@@ -120,6 +121,36 @@ tcp dport 22 ct timeout set "long_ssh"
   (`Priority::RAW` is -300).
 - A timeout's states must all be for one protocol, and each only once.
 - nft's listing leaves out any timeout that's the same as the kernel's default.
+
+## Conntrack expectations
+A `CtExpectation` is a simpler stand-in for a [conntrack helper](#conntrack-helpers), for a protocol that always opens
+its second connection on a known port. Once a rule gives a connection the expectation, conntrack expects a connection
+back the other way, from the machine that was contacted to the one that contacted it, on that port, within a time, and
+treats it as `related` to the first. The second
+connection can then be accepted with `ct state related`, rather than opening its port to everyone.
+
+It takes the IP version, the expected connection's protocol and port, how many seconds to wait for it, and how many
+expected connections each connection can have waiting at once (from 1 to 255). E.g. for a service that's contacted on
+port 5060, and replies by opening a connection back to port 5061:
+
+```php
+$callback = new CtExpectation("callback", $table, IpVersion::IPV4, Protocol::TCP, 5061, 60, 4);
+$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 5060), $callback->createStatement()));
+```
+
+```nft
+ct expectation callback {
+	protocol tcp
+	dport 5061
+	timeout 1m
+	size 4
+	l3proto ip
+}
+
+tcp dport 5060 ct expectation set "callback"
+```
+
+It needs nft 1.0.9 (e.g. Ubuntu 24.04 or RHEL 9), as older nft can't read one from JSON, and kernel 5.3.
 
 ## Synproxies
 A `NamedSynproxy` is a [synproxy](statements.md#synproxy) whose settings several rules share. It needs nft 1.1.3 (or

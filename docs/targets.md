@@ -71,7 +71,11 @@ Everything not listed here works on every target, from nft 0.9.8 up.
 | A [flowtable](flowtables.md) | nft 1.0.6 | Older nft can't read a flowtable's devices from JSON (0.9.8 crashes, and 1.0.2 and 1.0.4 silently drop them) |
 | A [named map](maps.md) whose values are concatenations (e.g. an address and port) | nft 1.1.3, or Rocky/AlmaLinux/RHEL 9 | Older nft crashes on one, or silently drops the map. Red Hat backported the fix to RHEL 9's nft 1.0.9. Two maps, one for the address and one for the port, work everywhere. |
 | An [anonymous map](maps.md#anonymous-maps) whose values are concatenations | nft 1.0.2 | nft 0.9.8 can't read one from JSON |
-| A [set update](statements.md#adding-to-sets-from-rules-meters) with statements (a meter) | nft 1.0.6 | Older nft silently drops the statements, leaving a plain set update |
+| A [set update](statements.md#adding-to-sets-from-rules-meters) with statements (a meter), including connection limits | nft 1.0.6 | Older nft silently drops the statements, leaving a plain set update |
+| A [conntrack expectation](objects.md#conntrack-expectations) | nft 1.0.9, and kernel 5.3 | Older nft can't read one from JSON |
+| A [socket](expressions.md#sockets)'s mark | Kernel 4.19 | RHEL 8's kernel doesn't have it |
+| A [socket](expressions.md#sockets)'s wildcard check | Kernel 5.6 | RHEL 8's kernel doesn't have it |
+| [Copying or forwarding](statements.md#copying-and-forwarding-packets) out of a device (dup and fwd) | nft 1.0.6 | They only work in a netdev table, whose chains need nft 1.0.6 |
 | A [conntrack timeout](objects.md#conntrack-timeouts) | nft 1.0.9, and kernel 4.19 | nft 0.9.8 crashes on one, and 1.0.2 to 1.0.6 silently drop its timeouts |
 | A [named synproxy](objects.md#synproxies) | nft 1.1.3, or Rocky/AlmaLinux/RHEL 9, and kernel 5.3 | Older nft can't read one from JSON. Red Hat backported it to RHEL 9's nft 1.0.9. |
 | A [synproxy](statements.md#synproxy) | Kernel 5.3 | RHEL 8's kernel doesn't have it |

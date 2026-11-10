@@ -138,9 +138,10 @@ map adds the map to the ruleset too. As with sets, keys that are ranges (`PortRa
 name.
 
 ## Port forwarding with a map
-`DnatStatement::createFromMap()` takes the address to forward to from a map. For a NAT gateway with many port
-forwards, one rule then does them all, with the forwards as the map's elements. How the port is mapped too depends on
-the target's nft.
+`DnatStatement::createFromMap()` takes the address to forward to from a map. For a NAT gateway with many port forwards,
+one rule then does them all, with the forwards as the map's elements.
+[`RuleFactory::createMapPortForward()`](rules.md#port-forwarding-from-a-map) builds the rule and its maps from a list of
+forwards, as described here. How the port is mapped too depends on the target's nft.
 
 With nft 1.1.3 (Debian 13), RHEL 9 or later, one map can give the address and port together, as a concatenation:
 
@@ -187,15 +188,15 @@ Either way:
 - the lookup is on the TCP destination port, so the rule only matches TCP. UDP forwards need their own rule (and
   map), looking up `PayloadField::UDP_DPORT`.
 - a port that isn't in the map isn't forwarded, so the packet carries on to this machine's own input chain.
-- the forwarded traffic still needs accepting in the forward chain, unless its policy is accept. A rule that accepts
-  every connection that was port forwarded saves listing them again: `ct status dnat`, as below.
+- the forwarded traffic still needs accepting in the forward chain, unless its policy is accept.
+  `RuleFactory::createAcceptPortForwards()` accepts every connection that was port forwarded (`ct status dnat`), so
+  the forwards don't need listing again.
 - `SnatStatement::createFromMap()` does the same for the source address, e.g. to give each machine behind the gateway
   its own public address.
 
 ```php
 $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::DROP);
-$wasForwarded = new MatchStatement(new CtExpression(CtKey::STATUS), Operator::IN, "dnat");
-$ruleset->addRule(Rule::create($forward, $wasForwarded, Verdict::ACCEPT));
+$ruleset->addRule(RuleFactory::createAcceptPortForwards($forward));
 ```
 
 ```nft
@@ -360,7 +361,7 @@ PHP before the next reload.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | A forward does nothing for UDP | The rule looks up `tcp dport`, so it only matches TCP | Add a second rule and map, looking up `PayloadField::UDP_DPORT` |
-| Forwarded connections time out | The forward chain drops them | Accept them there, e.g. with `ct status dnat accept` |
+| Forwarded connections time out | The forward chain drops them | Accept them there, e.g. with `RuleFactory::createAcceptPortForwards()` |
 | A forward added with `nft add element` disappeared | The ruleset was reloaded | Add it to the PHP too |
 | `BadArgumentException` about the `INTERVAL` flag | A key is a range or prefix, and the map wasn't created with `SetFlag::INTERVAL` | Pass `SetFlag::INTERVAL` to `create()` |
 | `UnsupportedFeatureException` for a map of concatenations | The target's nft is older than 1.1.3 | Use two maps, for the address and the port, as shown above |

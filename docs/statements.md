@@ -5,6 +5,7 @@
 - [Counting and logging](#counting-and-logging)
 - [Rate limits](#rate-limits)
 - [Quotas](#quotas)
+- [Connection limits](#connection-limits)
 - [Rejecting](#rejecting)
 - [Address translation (NAT)](#address-translation-nat)
 - [Marks and other changes](#marks-and-other-changes)
@@ -13,6 +14,7 @@
 - [Transparent proxying](#transparent-proxying)
 - [Queueing to a program](#queueing-to-a-program)
 - [Adding to sets from rules (meters)](#adding-to-sets-from-rules-meters)
+- [Copying and forwarding packets](#copying-and-forwarding-packets)
 - [Statements covered elsewhere](#statements-covered-elsewhere)
 - [Anything else](#anything-else)
 
@@ -114,6 +116,23 @@ quota over 10240 mbytes drop
 The amount is in `QuotaUnit::BYTES`, `KBYTES` or `MBYTES` (nft has no larger unit, and silently reads `gbytes` as
 bytes). The count starts again whenever the ruleset is reloaded. A [NamedQuota](objects.md#counters-quotas-and-limits)
 can be shared by several rules, and its usage read with `nft list quotas`.
+
+## Connection limits
+A `ConnectionLimitStatement` matches packets depending on how many connections conntrack is tracking (`ct count`).
+As with a rate limit, which packets it matches has to be chosen, with `LimitMatch::OVER_LIMIT` or `WITHIN_LIMIT`. On
+its own in a rule, it counts every connection that reaches it, e.g. to allow at most 100 SSH connections at once:
+
+```php
+$toSsh = MatchFactory::createDestinationPorts(Protocol::TCP, 22);
+$ruleset->addRule(Rule::create($input, $toSsh, new ConnectionLimitStatement(100, LimitMatch::OVER_LIMIT), Verdict::DROP));
+```
+
+```nft
+tcp dport 22 ct count over 100 drop
+```
+
+Its usual use is per address, carried by each element of a set, so each address has its own count. See
+[adding to sets from rules](#adding-to-sets-from-rules-meters).
 
 ## Rejecting
 A `RejectStatement` drops the packet, but also tells the sender, so they fail straight away instead of waiting to time
@@ -321,6 +340,63 @@ A statement in the braces is applied to the packet, and the rule only carries on
 Once the set is full, the rule stops at the update until elements expire, so make the size comfortably bigger than the
 number of addresses it should track at once.
 
+A [connection limit](#connection-limits) works the same way, so each address gets its own count of open connections,
+e.g. at most 20 each. Its set is the exception to the timeout rule: it mustn't have one, as the kernel refuses it, and
+removes each address by itself once its connections have all closed. It still needs a size:
+
+```php
+$connections = NamedSet::create($table, "connections", SetType::IPV4_ADDR)->withSize(65535);
+$tooManyConnections = new ConnectionLimitStatement(20, LimitMatch::OVER_LIMIT);
+$ruleset->addRule(Rule::create($input, new SetUpdateStatement(SetUpdateOperation::ADD, $connections, $sourceAddress, $tooManyConnections), Verdict::DROP));
+```
+
+```nft
+add @connections { ip saddr ct count over 20 } drop
+```
+
+An element can also have a timeout of its own, rather than the set's, by adding a `TimedElement` of it, e.g. to
+remember an address that broke a rule for an hour, in a set whose elements normally last a minute:
+
+```php
+$offenders = NamedSet::create($table, "offenders", SetType::IPV4_ADDR)->withTimeout(60)->withSize(10000);
+$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 23), new SetUpdateStatement(SetUpdateOperation::ADD, $offenders, new TimedElement($sourceAddress, 3600))));
+```
+
+```nft
+tcp dport 23 add @offenders { ip saddr timeout 1h }
+```
+
+## Copying and forwarding packets
+A `DupStatement` sends a copy of the packet somewhere else, while the original carries on as normal, e.g. to mirror
+traffic to a machine running an intrusion detection system:
+
+| Created with | Sends the copy | Tables |
+|---|---|---|
+| `DupStatement::createToAddress($address)` | To an address, routed as normal | `ip` or `ip6`, of the address's version (not `inet`) |
+| `DupStatement::createToAddress($address, $device)` | To an address, out of a particular device | `ip` or `ip6` |
+| `DupStatement::createToDevice($device)` | Out of a device, as it is | `netdev` |
+
+A `FwdStatement` sends the packet itself out of another device straight away, skipping the rest of the network stack,
+e.g. to join two devices together with no routing at all. It only works in a `netdev` table, with
+`FwdStatement::createToDevice($device)`, or `createToAddress($device, $address)` to send it to a next hop with its
+Ethernet header set for that hop, as routing would. Using one in any other table throws an `UnsuitableChainException`.
+
+```php
+$mirror = new BaseChain("mirror", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER, Policy::ACCEPT);
+$ruleset->addRule(Rule::create($mirror, DupStatement::createToAddress("10.0.0.9")));
+
+$edge = new Table("edge", Family::NETDEV);
+$ingress = new BaseChain("ingress", $edge, ChainType::FILTER, ChainHook::INGRESS, Priority::FILTER, Policy::ACCEPT, "eth0");
+$ruleset->addRule(Rule::create($ingress, FwdStatement::createToDevice("eth1")));
+```
+
+```nft
+dup to 10.0.0.9
+fwd to "eth1"
+```
+
+A `netdev` table's chains need nft 1.0.6 (e.g. Debian 12), so `createToDevice()` does too.
+
 ## Statements covered elsewhere
 - `VerdictMapStatement` looks a key up in a verdict map, and applies the verdict it maps to. See
   [verdict maps](maps.md#verdict-maps).
@@ -329,16 +405,17 @@ number of addresses it should track at once.
   security mark. See [named objects](objects.md).
 
 ## Anything else
-For a statement this package doesn't model yet (e.g. a connection limit), a `RawStatement` takes it in nft's JSON form,
-exactly as the [libnftables-json
-documentation](https://manpages.debian.org/testing/libnftables1/libnftables-json.5.en.html) describes it:
+For a statement this package doesn't model yet (e.g. logging to a program through an nflog group), a `RawStatement`
+takes it in nft's JSON form, exactly as the
+[libnftables-json documentation](https://manpages.debian.org/testing/libnftables1/libnftables-json.5.en.html)
+describes it:
 
 ```php
-$ruleset->addRule(Rule::create($input, new RawStatement(["ct count" => ["val" => 20, "inv" => true]]), Verdict::DROP));
+$ruleset->addRule(Rule::create($input, new RawStatement(["log" => ["group" => 2]]), Verdict::DROP));
 ```
 
 ```nft
-ct count over 20 drop
+log group 2 drop
 ```
 
 It's passed on without any checks, so check it loads with `nft --check`.

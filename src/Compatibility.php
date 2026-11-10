@@ -105,6 +105,26 @@ final class Compatibility
             return isset($definition["ct timeout"]);
         };
 
+        $isCtExpectation = function (array $definition) : bool {
+            return isset($definition["ct expectation"]);
+        };
+
+        // Each checks whether a rule reads a key of a socket.
+        $usesSocketKey = function (string $key) : Closure {
+            $usesKey = function (array $definition) use ($key) : bool {
+                $found = false;
+
+                foreach (self::findInRule($definition, "socket") as $socket)
+                {
+                    $found = $found || (($socket["key"] ?? "") === $key);
+                }
+
+                return $found;
+            };
+
+            return $usesKey;
+        };
+
         $isNamedSynproxy = function (array $definition) : bool {
             return isset($definition["synproxy"]["name"]);
         };
@@ -160,6 +180,15 @@ final class Compatibility
         // Older nft can't read the statement from JSON.
         $secmark = new FeatureRequirement("Setting a security mark", "1.0.6", "", $uses("secmark"));
 
+        // Older nft can't read one from JSON ("missing options").
+        $ctExpectation = new FeatureRequirement("A ct expectation", "1.0.9", "5.3", $isCtExpectation);
+
+        // RHEL 8's kernel changelog has no backport of either key.
+        $usesMark = $usesSocketKey("mark");
+        $usesWildcard = $usesSocketKey("wildcard");
+        $socketMark = new FeatureRequirement("A socket's mark", "0.9.8", "4.19", $usesMark);
+        $socketWildcard = new FeatureRequirement("A socket's wildcard check", "0.9.8", "5.6", $usesWildcard);
+
         // RHEL 8's kernel has it backported.
         $sctpChunk = new FeatureRequirement("An SCTP chunk", "1.0.2", "5.14", $uses("sctp chunk"), ...$rhel8);
 
@@ -178,6 +207,9 @@ final class Compatibility
             $osf,
             $secmark,
             $sctpChunk,
+            $ctExpectation,
+            $socketMark,
+            $socketWildcard,
         ];
 
         return new FeatureRequirementCollection($requirements);

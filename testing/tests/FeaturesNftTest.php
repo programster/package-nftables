@@ -13,6 +13,7 @@ use Programster\Nftables\AnonymousMap;
 use Programster\Nftables\AnonymousVerdictMap;
 use Programster\Nftables\BaseChain;
 use Programster\Nftables\Chain;
+use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
 use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\AddressType;
@@ -31,6 +32,8 @@ use Programster\Nftables\Enums\IcmpRejectCode;
 use Programster\Nftables\Enums\Icmpv6RejectCode;
 use Programster\Nftables\Enums\IcmpxRejectCode;
 use Programster\Nftables\Enums\IpVersion;
+use Programster\Nftables\Enums\IpsecDirection;
+use Programster\Nftables\Enums\IpsecKey;
 use Programster\Nftables\Enums\Ipv6ExtensionHeader;
 use Programster\Nftables\Enums\Ipv6ExtensionHeaderField;
 use Programster\Nftables\Enums\LimitMatch;
@@ -43,9 +46,11 @@ use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\NatFlag;
 use Programster\Nftables\Enums\NumgenMode;
 use Programster\Nftables\Enums\Operator;
+use Programster\Nftables\Enums\PacketEndpoint;
 use Programster\Nftables\Enums\PayloadBase;
 use Programster\Nftables\Enums\PayloadField;
 use Programster\Nftables\Enums\Policy;
+use Programster\Nftables\Enums\PortForwardMapLayout;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Enums\QueueFailMode;
@@ -55,6 +60,7 @@ use Programster\Nftables\Enums\RtKey;
 use Programster\Nftables\Enums\SetFlag;
 use Programster\Nftables\Enums\SetType;
 use Programster\Nftables\Enums\SetUpdateOperation;
+use Programster\Nftables\Enums\SocketKey;
 use Programster\Nftables\Enums\TcpOption;
 use Programster\Nftables\Enums\TcpOptionField;
 use Programster\Nftables\Enums\Verdict;
@@ -64,6 +70,7 @@ use Programster\Nftables\Expressions\CtExpression;
 use Programster\Nftables\Expressions\ExthdrExpression;
 use Programster\Nftables\Expressions\FibExpression;
 use Programster\Nftables\Expressions\HashExpression;
+use Programster\Nftables\Expressions\IpsecExpression;
 use Programster\Nftables\Expressions\MetaExpression;
 use Programster\Nftables\Expressions\NumgenExpression;
 use Programster\Nftables\Expressions\PayloadExpression;
@@ -72,7 +79,9 @@ use Programster\Nftables\Expressions\RangeExpression;
 use Programster\Nftables\Expressions\RawExpression;
 use Programster\Nftables\Expressions\RtExpression;
 use Programster\Nftables\Expressions\SetExpression;
+use Programster\Nftables\Expressions\SocketExpression;
 use Programster\Nftables\Expressions\TcpOptionExpression;
+use Programster\Nftables\Expressions\TimedElement;
 use Programster\Nftables\MapElement;
 use Programster\Nftables\MatchFactory;
 use Programster\Nftables\NamedMap;
@@ -82,14 +91,17 @@ use Programster\Nftables\Objects\CtHelper;
 use Programster\Nftables\Objects\NamedCounter;
 use Programster\Nftables\Objects\NamedLimit;
 use Programster\Nftables\Objects\NamedQuota;
+use Programster\Nftables\PortForward;
 use Programster\Nftables\PortRange;
 use Programster\Nftables\PortSet;
 use Programster\Nftables\RegularChain;
 use Programster\Nftables\Rule;
 use Programster\Nftables\RuleFactory;
 use Programster\Nftables\Ruleset;
+use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
 use Programster\Nftables\Statements\DnatStatement;
+use Programster\Nftables\Statements\DupStatement;
 use Programster\Nftables\Statements\GotoStatement;
 use Programster\Nftables\Statements\JumpStatement;
 use Programster\Nftables\Statements\LimitStatement;
@@ -886,7 +898,132 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
 
     $smoke->run("nft: numgen, jhash and symhash expressions load", $testNumgenAndHashes);
 
+    # Connection limits, sockets, element timeouts, dup and IPsec
+
+    $testConnectionLimits = function () use ($assertRulesLoadAs, $rule, $input) : void {
+        $over = new ConnectionLimitStatement(20, LimitMatch::OVER_LIMIT);
+        $within = new ConnectionLimitStatement(5, LimitMatch::WITHIN_LIMIT);
+        $rules = [$rule($input, $over, Verdict::DROP), $rule($input, $within, Verdict::ACCEPT)];
+        $assertRulesLoadAs(["ct count over 20 drop", "ct count 5 accept"], ...$rules);
+    };
+
+    $smoke->run("nft: connection limits (within and over) load", $testConnectionLimits);
+
+    $testTransparentSockets = function () use ($assertRulesLoadAs, $rule, $chain, $ipTable) : void {
+        $mangle = $chain("mangle", $ipTable, ChainType::FILTER, ChainHook::PREROUTING, Priority::MANGLE);
+        $isTransparent = new MatchStatement(new SocketExpression(SocketKey::TRANSPARENT), Operator::EQUALS, 1);
+        $assertRulesLoadAs(["socket transparent 1 accept"], $rule($mangle, $isTransparent, Verdict::ACCEPT));
+    };
+
+    $smoke->run("nft: socket transparent checks load", $testTransparentSockets);
+
+    $testTimedElements = function () use ($assertRulesLoadAs, $rule, $ipTable, $input) : void {
+        $saddr = PayloadExpression::create(PayloadField::IP_SADDR);
+        $blocked = NamedSet::create($ipTable, "blocked", SetType::IPV4_ADDR)->withTimeout(60);
+        $blocked = $blocked->withElements(new TimedElement("10.0.0.1", 3600), "10.0.0.2");
+        $recent = NamedSet::create($ipTable, "recent", SetType::IPV4_ADDR)->withTimeout(60)->withSize(100);
+        $addForTenSeconds = new SetUpdateStatement(SetUpdateOperation::ADD, $recent, new TimedElement($saddr, 10));
+
+        $rules = [
+            $rule($input, MatchFactory::createInSet($saddr, $blocked), Verdict::DROP),
+            $rule($input, $addForTenSeconds),
+        ];
+
+        // The listed elements also say when they expire, which changes from second to second.
+        $assertRulesLoadAs(["timeout 1m", "add @recent { ip saddr timeout 10s }"], ...$rules);
+    };
+
+    $smoke->run("nft: elements with timeouts of their own (in a set and a set update) load", $testTimedElements);
+
+    $testDup = function () use ($assertRulesLoadAs, $rule, $chain, $ipTable, $ip6Table) : void {
+        $prerouting = $chain("mirror", $ipTable, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER);
+        $prerouting6 = $chain("mirror", $ip6Table, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER);
+
+        $rules = [
+            $rule($prerouting, DupStatement::createToAddress("10.0.0.9")),
+            $rule($prerouting, DupStatement::createToAddress("10.0.0.9", "eth1")),
+            $rule($prerouting6, DupStatement::createToAddress("fd00::9")),
+        ];
+
+        $assertRulesLoadAs(["dup to 10.0.0.9", 'dup to 10.0.0.9 device "eth1"', "dup to fd00::9"], ...$rules);
+    };
+
+    $smoke->run("nft: dup to an address (IPv4 and IPv6, with and without a device) loads", $testDup);
+
+    $testIpsec = function () use ($assertRulesLoadAs, $rule, $chain, $input, $inetTable) : void {
+        $output = $chain("output", $inetTable, ChainType::FILTER, ChainHook::OUTPUT, Priority::FILTER);
+        $reqid = IpsecExpression::create(IpsecDirection::IN, IpsecKey::REQID);
+        $spi = IpsecExpression::create(IpsecDirection::IN, IpsecKey::SPI, 1);
+        $source = IpsecExpression::createAddress(IpsecDirection::IN, PacketEndpoint::SOURCE, IpVersion::IPV4);
+        $toDestination = PacketEndpoint::DESTINATION;
+        $destination = IpsecExpression::createAddress(IpsecDirection::OUT, $toDestination, IpVersion::IPV6);
+
+        $rules = [
+            $rule($input, new MatchStatement($reqid, Operator::EQUALS, 1), Verdict::ACCEPT),
+            $rule($input, new MatchStatement($spi, Operator::EQUALS, 256), Verdict::ACCEPT),
+            $rule($input, new MatchStatement($source, Operator::EQUALS, "203.0.113.5"), Verdict::ACCEPT),
+            $rule($output, new MatchStatement($destination, Operator::EQUALS, "fd00::1"), Verdict::ACCEPT),
+        ];
+
+        $expected = [
+            "ipsec in reqid 1 accept",
+            "ipsec in spnum 1 spi 256 accept",
+            "ipsec in ip saddr 203.0.113.5 accept",
+            "ipsec out ip6 daddr fd00::1 accept",
+        ];
+
+        $assertRulesLoadAs($expected, ...$rules);
+    };
+
+    $smoke->run("nft: IPsec expressions (every key, both directions) load", $testIpsec);
+
     # RuleFactory
+
+    $testMapPortForward = function () use ($assertRulesLoadAs, $ipTable, $prerouting, $prerouting6) : void {
+        $twoMaps = PortForwardMapLayout::TWO_MAPS;
+        $trusted = NamedSet::createAddressSet($ipTable, "trusted", IpVersion::IPV4, "198.51.100.0/24");
+        $sshForwards = [new PortForward(2222, "10.0.0.2", 22), new PortForward(2223, "10.0.0.5", 22)];
+        $ssh = new PortForwardCollection($sshForwards);
+        $games = new PortForwardCollection([new PortForward(27015, "10.0.0.6", 27015)]);
+        $ipv6 = new PortForwardCollection([new PortForward(8080, "fd00::3", 80)]);
+        $wanAddress = "203.0.113.1";
+        $ipv4 = IpVersion::IPV4;
+        $none = new PortForwardCollection();
+        $toTrusted = "dnat to tcp dport map @trusted_ssh_addresses:tcp dport map @trusted_ssh_ports";
+
+        $rules = [
+            RuleFactory::createMapPortForward($prerouting, "eth0", "ssh", $twoMaps, IpVersion::IPV4, $ssh),
+            RuleFactory::createMapPortForward(
+                $prerouting,
+                "eth0",
+                "trusted_ssh",
+                $twoMaps,
+                IpVersion::IPV4,
+                $ssh,
+                allowedSources: $trusted,
+                destinationAddress: $wanAddress,
+            ),
+            RuleFactory::createMapPortForward($prerouting, "eth0", "games", $twoMaps, $ipv4, $games, Protocol::UDP),
+            RuleFactory::createMapPortForward($prerouting, "eth0", "empty", $twoMaps, $ipv4, $none),
+            RuleFactory::createMapPortForward($prerouting6, "eth0", "web", $twoMaps, IpVersion::IPV6, $ipv6),
+        ];
+
+        $expected = [
+            "map ssh_addresses {",
+            "elements = { 2222 : 10.0.0.2,",
+            "map ssh_ports {",
+            "elements = { 2222 : 22,",
+            'iifname "eth0" dnat to tcp dport map @ssh_addresses:tcp dport map @ssh_ports',
+            'iifname "eth0" ip saddr @trusted ip daddr 203.0.113.1 ' . $toTrusted,
+            'iifname "eth0" dnat to udp dport map @games_addresses:udp dport map @games_ports',
+            "map empty_addresses {",
+            'iifname "eth0" dnat to tcp dport map @web_addresses:tcp dport map @web_ports',
+        ];
+
+        $assertRulesLoadAs($expected, ...$rules);
+    };
+
+    $smoke->run("nft: port forwards from two maps (with an allowlist, UDP, empty and IPv6) load", $testMapPortForward);
 
     $testRuleFactory = function () use ($assertRulesLoadAs, $input, $forward, $prerouting, $postrouting) : void {
         $established = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
@@ -926,6 +1063,12 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
     };
 
     $smoke->run("nft: every RuleFactory rule loads, and ends in a verdict", $testRuleFactory);
+
+    $testAcceptPortForwards = function () use ($assertRulesLoadAs, $forward) : void {
+        $assertRulesLoadAs(["ct status dnat accept"], RuleFactory::createAcceptPortForwards($forward));
+    };
+
+    $smoke->run("nft: accepting every port forward loads", $testAcceptPortForwards);
 };
 
 try

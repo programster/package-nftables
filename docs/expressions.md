@@ -8,6 +8,8 @@
 - [Existence checks](#existence-checks)
 - [Routing lookups (fib and rt)](#routing-lookups-fib-and-rt)
 - [IPv6 extension headers and TCP options](#ipv6-extension-headers-and-tcp-options)
+- [Sockets](#sockets)
+- [IPsec](#ipsec)
 - [Combining values](#combining-values)
 - [Map lookups](#map-lookups)
 - [Number generators and hashes](#number-generators-and-hashes)
@@ -151,6 +153,54 @@ options are `TcpOption::MAXSEG` (the maximum segment size), `WINDOW` (window sca
 `TIMESTAMP`. A selective acknowledgement's blocks are fields of `SACK` (`TcpOptionField::SACK_LEFT` for the first,
 then `SACK1_LEFT` to `SACK3_RIGHT`).
 
+## Sockets
+A `SocketExpression` reads something about the local socket a packet belongs to, if there is one. A packet with no
+local socket doesn't match. Its `SocketKey`s are:
+
+| `SocketKey` | Gives | Needs |
+|---|---|---|
+| `TRANSPARENT` | 1 if the socket has `IP_TRANSPARENT` set, e.g. a [transparent proxy](statements.md#transparent-proxying)'s | Every target |
+| `MARK` | The socket's mark (`SO_MARK`) | Kernel 4.19, so not RHEL 8 |
+| `WILDCARD` | 1 if the socket listens on a wildcard address (e.g. 0.0.0.0) | Kernel 5.6, so not RHEL 8 |
+
+The usual use is with a transparent proxy: packets for a connection the proxy already has open are accepted straight
+away, rather than going through the `TproxyStatement` again. It only works on the prerouting, input and output hooks:
+
+```php
+$hasTransparentSocket = new MatchStatement(new SocketExpression(SocketKey::TRANSPARENT), Operator::EQUALS, 1);
+$ruleset->addRule(Rule::create($input, $hasTransparentSocket, Verdict::ACCEPT));
+```
+
+```nft
+socket transparent 1 accept
+```
+
+## IPsec
+An `IpsecExpression` reads something about the IPsec security association a packet arrived through
+(`IpsecDirection::IN`), or will leave through (`OUT`), e.g. to only accept traffic that came through one tunnel. A
+packet that didn't go through IPsec doesn't match. To just check whether it did, match `MetaKey::SECPATH` instead.
+
+- `IpsecExpression::create()` reads the association's request ID (`IpsecKey::REQID`) or security parameter index
+  (`SPI`).
+- `IpsecExpression::createAddress()` reads the tunnel's source or destination address, of an IP version.
+- Both take an optional association number, from 0, for a packet that went through more than one (e.g. nested
+  tunnels).
+
+```php
+$fromTunnel1 = new MatchStatement(IpsecExpression::create(IpsecDirection::IN, IpsecKey::REQID), Operator::EQUALS, 1);
+$fromGateway = new MatchStatement(IpsecExpression::createAddress(IpsecDirection::IN, PacketEndpoint::SOURCE, IpVersion::IPV4), Operator::EQUALS, "203.0.113.5");
+$ruleset->addRule(Rule::create($input, $fromTunnel1, Verdict::ACCEPT));
+$ruleset->addRule(Rule::create($input, $fromGateway, Verdict::ACCEPT));
+```
+
+```nft
+ipsec in reqid 1 accept
+ipsec in ip saddr 203.0.113.5 accept
+```
+
+`IN` only works on the prerouting, input and forward hooks, and `OUT` on the forward, output and postrouting hooks.
+nft refuses the ruleset otherwise.
+
 ## Combining values
 A `ConcatExpression` joins values, so they're matched together, e.g. an address and a port against a set of pairs:
 
@@ -233,16 +283,16 @@ sctp chunk data tsn 0 drop
 ```
 
 ## Anything else
-For an expression this package doesn't model yet (e.g. a `socket` expression), a `RawExpression` takes it in nft's JSON
-form, exactly as the [libnftables-json
-documentation](https://manpages.debian.org/testing/libnftables1/libnftables-json.5.en.html) describes it. It's passed on
-without any checks.
+For an expression this package doesn't model yet (e.g. an IPv4 option), a `RawExpression` takes it in nft's JSON form,
+exactly as the
+[libnftables-json documentation](https://manpages.debian.org/testing/libnftables1/libnftables-json.5.en.html)
+describes it. It's passed on without any checks.
 
 ```php
-$hasTransparentSocket = new RawExpression(["socket" => ["key" => "transparent"]]);
-$ruleset->addRule(Rule::create($input, new MatchStatement($hasTransparentSocket, Operator::EQUALS, 1), Verdict::ACCEPT));
+$routerAlert = new RawExpression(["ip option" => ["name" => "ra"]]);
+$ruleset->addRule(Rule::create($input, new MatchStatement($routerAlert, Operator::EQUALS, Existence::EXISTS), Verdict::ACCEPT));
 ```
 
 ```nft
-socket transparent 1 accept
+ip option ra exists accept
 ```

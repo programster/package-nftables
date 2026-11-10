@@ -5,6 +5,8 @@
   - [Accepting an interface](#accepting-an-interface)
   - [Opening a port](#opening-a-port)
   - [Port forwarding](#port-forwarding)
+  - [Port forwarding from a map](#port-forwarding-from-a-map)
+  - [Accepting port forwards](#accepting-port-forwards)
   - [Forwarding traffic through](#forwarding-traffic-through)
   - [Masquerading](#masquerading)
   - [Spotting spoofed packets](#spotting-spoofed-packets)
@@ -111,6 +113,79 @@ send every connection to whichever port in the range it picked, not map them acr
 
 This only changes the destination. Unless the forward chain's policy is accept, the traffic also needs letting through
 it, with `createForward()`.
+
+### Port forwarding from a map
+`createMapPortForward()` does many port forwards in one rule, with the forwards as the elements of a named
+[map](maps.md), rather than a rule each. A gateway with dozens of forwards then has one rule per protocol (and
+allowlist), and a forward can be added or removed at runtime with `nft add element`, without reloading. Each forward
+is a `PortForward` of an incoming port, an address and a port, in a `PortForwardCollection`:
+
+```php
+$forwards = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22), new PortForward(8080, "10.0.0.3", 80)]);
+$ruleset->addRule(RuleFactory::createMapPortForward($prerouting, "eth0", "forwards", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $forwards));
+```
+
+```nft
+map forwards_addresses {
+	type inet_service : ipv4_addr
+	elements = { 2222 : 10.0.0.2,
+		     8080 : 10.0.0.3 }
+}
+
+map forwards_ports {
+	type inet_service : inet_service
+	elements = { 2222 : 22,
+		     8080 : 80 }
+}
+
+iifname "eth0" dnat to tcp dport map @forwards_addresses:tcp dport map @forwards_ports
+```
+
+The layout has to be chosen, as it depends on the [target](targets.md):
+
+| `PortForwardMapLayout` | Maps | Needs | To add a forward at runtime |
+|---|---|---|---|
+| `ONE_MAP` | `forwards`, from port to address and port together, e.g. `2222 : 10.0.0.2 . 22` | nft 1.1.3 (e.g. Debian 13), or RHEL 9 | `nft add element ip gateway forwards '{ 2223 : 10.0.0.5 . 22 }'` |
+| `TWO_MAPS` | `forwards_addresses`, from port to address, and `forwards_ports`, from port to port | nft 0.9.8, so every target | The same in each map: `'{ 2223 : 10.0.0.5 }'` and `'{ 2223 : 22 }'` |
+
+With `ONE_MAP` and an older target, adding the rule throws an `UnsupportedFeatureException`. Its optional parameters
+are:
+
+| Parameter | Default | Use |
+|---|---|---|
+| `$protocol` | `Protocol::TCP` | The transport protocol. UDP forwards need their own rule, with their own map name. |
+| `$allowedSources` | `null` (anywhere) | A [named set](sets.md) of the addresses the traffic must come from, e.g. an allowlist for SSH |
+| `$destinationAddress` | `null` (any) | The address the traffic must have been sent to, for a machine with more than one |
+| `$comment` | `""` | A comment for the rule |
+
+E.g. for forwards that only a few trusted addresses can use, alongside the public ones above:
+
+```php
+$trusted = NamedSet::createAddressSet($table, "trusted", IpVersion::IPV4, "198.51.100.7", "203.0.113.0/24");
+$private = new PortForwardCollection([new PortForward(22, "10.0.0.4", 22)]);
+$ruleset->addRule(RuleFactory::createMapPortForward($prerouting, "eth0", "private", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $private, allowedSources: $trusted));
+```
+
+```nft
+iifname "eth0" ip saddr @trusted dnat to tcp dport map @private_addresses:tcp dport map @private_ports
+```
+
+A port that isn't in the maps isn't forwarded, so the packet carries on to this machine's own input chain. As with
+`createPortForward()`, the forwarded traffic also needs accepting in the forward chain, unless its policy is accept:
+see [accepting port forwards](#accepting-port-forwards).
+
+### Accepting port forwards
+`createAcceptPortForwards()` accepts every connection that was port forwarded (`ct status dnat`), in both directions,
+so a forward chain with a drop policy lets them through without a rule for each. It only accepts what a rule in a nat
+chain chose to forward, so it doesn't open anything else:
+
+```php
+$ruleset->addRule(RuleFactory::createAcceptPortForwards($forward));
+```
+
+```nft
+ct status dnat accept
+```
 
 ### Forwarding traffic through
 `createForward()` accepts traffic passing through this machine from one interface to another. For a port forward,

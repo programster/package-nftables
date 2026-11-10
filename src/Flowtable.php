@@ -23,9 +23,6 @@ use Programster\Nftables\Exceptions\BadArgumentException;
  */
 final readonly class Flowtable implements TableItem
 {
-    // The kernel's limit for an interface name, which includes a terminating null byte.
-    private const MAX_DEVICE_BYTES = 15;
-
     private string $m_name;
     private Table $m_table;
     private int|Priority $m_priority;
@@ -68,11 +65,7 @@ final readonly class Flowtable implements TableItem
 
         foreach ($devices as $device)
         {
-            if ($device === "" || strlen($device) > self::MAX_DEVICE_BYTES)
-            {
-                $message = "A device name must be from 1 to " . self::MAX_DEVICE_BYTES . " bytes long.";
-                throw new BadArgumentException($message);
-            }
+            NetworkLib::assertValidDeviceName($device);
         }
 
         if ($priority instanceof Priority)

@@ -4,22 +4,31 @@ declare(strict_types=1);
 
 namespace Programster\Nftables;
 
+use Programster\Nftables\Collections\PortForwardCollection;
+use Programster\Nftables\Collections\SetTypeCollection;
 use Programster\Nftables\Collections\StatementCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
+use Programster\Nftables\Enums\CtKey;
 use Programster\Nftables\Enums\Existence;
+use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
+use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\Operator;
 use Programster\Nftables\Enums\PayloadField;
+use Programster\Nftables\Enums\PortForwardMapLayout;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Enums\RtKey;
+use Programster\Nftables\Enums\SetType;
 use Programster\Nftables\Enums\TcpOptionField;
 use Programster\Nftables\Enums\Verdict;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
+use Programster\Nftables\Expressions\ConcatExpression;
+use Programster\Nftables\Expressions\CtExpression;
 use Programster\Nftables\Expressions\FibExpression;
 use Programster\Nftables\Expressions\MetaExpression;
 use Programster\Nftables\Expressions\PayloadExpression;
@@ -211,6 +220,140 @@ final class RuleFactory
 
 
     /**
+     * Create a rule that does many port forwards at once, from a named map of incoming ports, rather than a rule per
+     * forward (see docs/maps.md). The forwards can be changed at runtime with "nft add element", without reloading the
+     * rules. Traffic to a port that isn't in the map isn't forwarded, and carries on to this machine's input chain. As
+     * with createPortForward(), the forwarded traffic also needs accepting in the forward chain, unless its policy is
+     * accept.
+     *
+     * @param BaseChain $preroutingChain - a nat chain on the prerouting hook, in a table of the forwards' IP version
+     * (or an inet table).
+     *
+     * @param string $inputInterfaceName - the interface the traffic arrives on, typically the WAN interface.
+     *
+     * @param string $mapName - the name of the map, or the start of the two maps' names (see $layout). It must be
+     * unique among the sets and maps in the table.
+     *
+     * @param PortForwardMapLayout $layout - one map (needs nft 1.1.3, or RHEL 9) or two (works everywhere). There's no
+     * default, as it depends on the target the ruleset is for.
+     *
+     * @param IpVersion $ipVersion - the IP version of the addresses forwarded to.
+     *
+     * @param PortForwardCollection $forwards - the forwards. It can be empty, for forwards that are only added at
+     * runtime.
+     *
+     * @param Protocol $protocol - the transport protocol. Defaults to TCP. A UDP forward needs a rule (and map) of its
+     * own.
+     *
+     * @param NamedSet|null $allowedSources - optionally, a set of the addresses (or networks) the traffic must come
+     * from, e.g. an allowlist for SSH. Defaults to null, for anywhere.
+     *
+     * @param string|null $destinationAddress - optionally, the IP address or network CIDR the traffic must have been
+     * sent to, for a machine with more than one address. Defaults to null, for any.
+     *
+     * @param string $comment - optionally, a comment for the rule.
+     *
+     * @return Rule
+     *
+     * @throws UnsuitableChainException - if the chain isn't a nat chain on the prerouting hook, or its table is for the
+     * other IP version, or the allowed sources set is in another table.
+     *
+     * @throws BadArgumentException - if a forward is for the other IP version, two forwards share an incoming port, or
+     * the map's name is empty or too long.
+     *
+     * @throws InvalidAddressException - if $destinationAddress isn't an IP address or network CIDR.
+     */
+    public static function createMapPortForward(
+        BaseChain $preroutingChain,
+        string $inputInterfaceName,
+        string $mapName,
+        PortForwardMapLayout $layout,
+        IpVersion $ipVersion,
+        PortForwardCollection $forwards,
+        Protocol $protocol = Protocol::TCP,
+        ?NamedSet $allowedSources = null,
+        ?string $destinationAddress = null,
+        string $comment = "",
+    ) : Rule
+    {
+        ChainLib::assertChainIs($preroutingChain, ChainType::NAT, "port forward", ChainHook::PREROUTING);
+        $table = $preroutingChain->getTable();
+        $family = $table->getFamily();
+        $suitableFamily = ($ipVersion === IpVersion::IPV4) ? Family::IP : Family::IP6;
+
+        if ($family !== $suitableFamily && $family !== Family::INET)
+        {
+            $needs = "an {$suitableFamily->value} or inet table";
+            $message = "A port forward to {$ipVersion->name} addresses needs {$needs}, not {$family->value}.";
+            throw new UnsuitableChainException($message);
+        }
+
+        $incomingPorts = [];
+        $addresses = [];
+        $ports = [];
+        $concatenations = [];
+
+        foreach ($forwards as $forward)
+        {
+            $incomingPort = $forward->getIncomingPort();
+
+            if ($forward->getIpVersion() !== $ipVersion)
+            {
+                $message = "The port forward from port {$incomingPort} isn't to an {$ipVersion->name} address.";
+                throw new BadArgumentException($message);
+            }
+
+            if (isset($incomingPorts[$incomingPort]))
+            {
+                throw new BadArgumentException("Port {$incomingPort} is forwarded more than once.");
+            }
+
+            $incomingPorts[$incomingPort] = true;
+            $addresses[] = new MapElement($incomingPort, $forward->getAddress());
+            $ports[] = new MapElement($incomingPort, $forward->getPort());
+            $concatenation = new ConcatExpression($forward->getAddress(), $forward->getPort());
+            $concatenations[] = new MapElement($incomingPort, $concatenation);
+        }
+
+        $addressType = ($ipVersion === IpVersion::IPV4) ? SetType::IPV4_ADDR : SetType::IPV6_ADDR;
+        $incomingPort = PayloadExpression::create(PayloadField::from("{$protocol->value} dport"));
+
+        if ($layout === PortForwardMapLayout::ONE_MAP)
+        {
+            $addressAndPort = new SetTypeCollection([$addressType, SetType::INET_SERVICE]);
+            $map = NamedMap::create($table, $mapName, SetType::INET_SERVICE, $addressAndPort);
+            $map = $map->withElements(...$concatenations);
+            $dnat = DnatStatement::createFromMap($ipVersion, $map->lookUp($incomingPort));
+        }
+        else
+        {
+            $addressMap = NamedMap::create($table, "{$mapName}_addresses", SetType::INET_SERVICE, $addressType);
+            $addressMap = $addressMap->withElements(...$addresses);
+            $portMap = NamedMap::create($table, "{$mapName}_ports", SetType::INET_SERVICE, SetType::INET_SERVICE);
+            $portMap = $portMap->withElements(...$ports);
+            $toAddress = $addressMap->lookUp($incomingPort);
+            $dnat = DnatStatement::createFromMap($ipVersion, $toAddress, $portMap->lookUp($incomingPort));
+        }
+
+        $statements = [MatchFactory::createInputInterfaceName($inputInterfaceName)];
+
+        if ($allowedSources !== null)
+        {
+            $sourceField = ($ipVersion === IpVersion::IPV4) ? PayloadField::IP_SADDR : PayloadField::IP6_SADDR;
+            $statements[] = MatchFactory::createInSet(PayloadExpression::create($sourceField), $allowedSources);
+        }
+
+        if ($destinationAddress !== null)
+        {
+            $statements[] = MatchFactory::createDestinationAddress($destinationAddress);
+        }
+
+        $statements[] = $dnat;
+        return Rule::create($preroutingChain, ...$statements)->withComment($comment);
+    }
+
+
+    /**
      * Create a rule that accepts traffic being forwarded through this machine from one interface to another, e.g. the
      * traffic a port forward sends on to a machine behind this one, or the replies to it.
      *
@@ -291,6 +434,27 @@ final class RuleFactory
 
         $statements[] = Verdict::ACCEPT;
         return Rule::create($forwardChain, ...$statements)->withComment($comment);
+    }
+
+
+    /**
+     * Create a rule that accepts every connection that was port forwarded (ct status dnat), in either direction, e.g.
+     * after createMapPortForward(), so the forwards don't each need a rule in the forward chain too. A connection is
+     * only port forwarded if a rule in a nat chain chose to, so this doesn't open anything else.
+     *
+     * @param BaseChain $forwardChain - a filter chain on the forward hook.
+     *
+     * @param string $comment - optionally, a comment for the rule.
+     *
+     * @return Rule
+     *
+     * @throws UnsuitableChainException - if the chain isn't a filter chain on the forward hook.
+     */
+    public static function createAcceptPortForwards(BaseChain $forwardChain, string $comment = "") : Rule
+    {
+        ChainLib::assertChainIs($forwardChain, ChainType::FILTER, "accept port forwards", ChainHook::FORWARD);
+        $wasPortForwarded = new MatchStatement(new CtExpression(CtKey::STATUS), Operator::IN, "dnat");
+        return Rule::create($forwardChain, $wasPortForwarded, Verdict::ACCEPT)->withComment($comment);
     }
 
 

@@ -9,6 +9,7 @@
 use Programster\Nftables\AnonymousMap;
 use Programster\Nftables\AnonymousVerdictMap;
 use Programster\Nftables\BaseChain;
+use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
 use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\BinaryOperator;
@@ -21,6 +22,8 @@ use Programster\Nftables\Enums\Existence;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
+use Programster\Nftables\Enums\IpsecDirection;
+use Programster\Nftables\Enums\IpsecKey;
 use Programster\Nftables\Enums\Ipv6ExtensionHeaderField;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\LimitMatch;
@@ -31,6 +34,7 @@ use Programster\Nftables\Enums\Operator;
 use Programster\Nftables\Enums\PayloadBase;
 use Programster\Nftables\Enums\PayloadField;
 use Programster\Nftables\Enums\Policy;
+use Programster\Nftables\Enums\PortForwardMapLayout;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Enums\QueueFailMode;
@@ -51,6 +55,7 @@ use Programster\Nftables\Expressions\ConcatExpression;
 use Programster\Nftables\Expressions\ExthdrExpression;
 use Programster\Nftables\Expressions\FibExpression;
 use Programster\Nftables\Expressions\HashExpression;
+use Programster\Nftables\Expressions\IpsecExpression;
 use Programster\Nftables\Expressions\MetaExpression;
 use Programster\Nftables\Expressions\NumgenExpression;
 use Programster\Nftables\Expressions\PayloadExpression;
@@ -58,6 +63,7 @@ use Programster\Nftables\Expressions\PrefixExpression;
 use Programster\Nftables\Expressions\SctpChunkExpression;
 use Programster\Nftables\Expressions\SetExpression;
 use Programster\Nftables\Expressions\TcpOptionExpression;
+use Programster\Nftables\Expressions\TimedElement;
 use Programster\Nftables\Flowtable;
 use Programster\Nftables\MapElement;
 use Programster\Nftables\MatchFactory;
@@ -65,19 +71,24 @@ use Programster\Nftables\NamedMap;
 use Programster\Nftables\NamedSet;
 use Programster\Nftables\NamedVerdictMap;
 use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Objects\CtExpectation;
 use Programster\Nftables\Objects\CtHelper;
 use Programster\Nftables\Objects\CtTimeout;
 use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedCounter;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
+use Programster\Nftables\PortForward;
 use Programster\Nftables\PortRange;
 use Programster\Nftables\PortSet;
 use Programster\Nftables\RegularChain;
 use Programster\Nftables\Rule;
 use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
+use Programster\Nftables\Statements\DupStatement;
 use Programster\Nftables\Statements\FlowOffloadStatement;
+use Programster\Nftables\Statements\FwdStatement;
 use Programster\Nftables\Statements\JumpStatement;
 use Programster\Nftables\Statements\LimitStatement;
 use Programster\Nftables\Statements\LogStatement;
@@ -921,6 +932,262 @@ $checkAnSctpFieldExists = function () : void {
 };
 
 $cases[] = ["an SCTP field existence check", BadArgumentException::class, "checked for.", $checkAnSctpFieldExists];
+
+# Port forwards from a map
+
+$natPrerouting = Fixtures::createBaseChain($ipTable, ChainType::NAT, ChainHook::PREROUTING);
+$twoMaps = PortForwardMapLayout::TWO_MAPS;
+$oneForward = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22)]);
+
+$createAMapPortForwardInAFilterChain = function () use ($prerouting, $oneForward) : void {
+    $layout = PortForwardMapLayout::TWO_MAPS;
+    RuleFactory::createMapPortForward($prerouting, "eth0", "f", $layout, IpVersion::IPV4, $oneForward);
+};
+
+$cases[] = [
+    "a map port forward in a filter chain",
+    UnsuitableChainException::class,
+    "a nat chain",
+    $createAMapPortForwardInAFilterChain,
+];
+
+$createAnIpv6MapPortForwardInAnIpTable = function () use ($natPrerouting, $twoMaps) : void {
+    $forwards = new PortForwardCollection([new PortForward(80, "fd00::1", 80)]);
+    RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $twoMaps, IpVersion::IPV6, $forwards);
+};
+
+$cases[] = [
+    "an IPv6 map port forward in an ip table",
+    UnsuitableChainException::class,
+    "needs an ip6 or inet table, not ip",
+    $createAnIpv6MapPortForwardInAnIpTable,
+];
+
+$createAMixedMapPortForward = function () use ($natPrerouting, $twoMaps) : void {
+    $forwards = new PortForwardCollection([new PortForward(80, "10.0.0.1", 80), new PortForward(81, "fd00::1", 80)]);
+    RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $twoMaps, IpVersion::IPV4, $forwards);
+};
+
+$cases[] = ["a map port forward to both IP versions", BadArgumentException::class, "81", $createAMixedMapPortForward];
+
+$createAPortForwardedTwice = function () use ($natPrerouting) : void {
+    $forwards = new PortForwardCollection([new PortForward(80, "10.0.0.1", 80), new PortForward(80, "10.0.0.2", 80)]);
+    $oneMap = PortForwardMapLayout::ONE_MAP;
+    RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $oneMap, IpVersion::IPV4, $forwards);
+};
+
+$cases[] = ["a port forwarded twice", BadArgumentException::class, "more than once", $createAPortForwardedTwice];
+
+$createAPortForwardToANetwork = function () : void {
+    new PortForward(80, "10.0.0.0/8", 80);
+};
+
+$cases[] = ["a port forward to a network", InvalidAddressException::class, "CIDR", $createAPortForwardToANetwork];
+
+$createAPortForwardFromPort0 = function () : void {
+    new PortForward(0, "10.0.0.1", 80);
+};
+
+$cases[] = ["a port forward from port 0", BadArgumentException::class, "65535", $createAPortForwardFromPort0];
+
+# Connection limits, element timeouts, dup, fwd, IPsec, ct expectations and accepting port forwards
+
+$createAConnectionLimitOf0 = function () : void {
+    new ConnectionLimitStatement(0, LimitMatch::OVER_LIMIT);
+};
+
+$cases[] = ["a connection limit of 0", BadArgumentException::class, "at least 1", $createAConnectionLimitOf0];
+
+$createAConnectionLimitInASetWithATimeout = function () use ($ipTable, $saddr) : void {
+    $set = NamedSet::create($ipTable, "s", SetType::IPV4_ADDR)->withTimeout(60)->withSize(10);
+    $limit = new ConnectionLimitStatement(5, LimitMatch::OVER_LIMIT);
+    new SetUpdateStatement(SetUpdateOperation::ADD, $set, $saddr, $limit);
+};
+
+$cases[] = [
+    "a connection limit in a set with a timeout",
+    BadArgumentException::class,
+    "can't have a timeout",
+    $createAConnectionLimitInASetWithATimeout,
+];
+
+$createAConnectionLimitInASetWithNoSize = function () use ($ipTable, $saddr) : void {
+    $set = NamedSet::create($ipTable, "s", SetType::IPV4_ADDR);
+    $limit = new ConnectionLimitStatement(5, LimitMatch::OVER_LIMIT);
+    new SetUpdateStatement(SetUpdateOperation::ADD, $set, $saddr, $limit);
+};
+
+$cases[] = [
+    "a connection limit in a set with no size",
+    BadArgumentException::class,
+    "withSize",
+    $createAConnectionLimitInASetWithNoSize,
+];
+
+$createAnElementTimeoutOf0 = function () : void {
+    new TimedElement("10.0.0.1", 0);
+};
+
+$cases[] = ["an element timeout of 0", BadArgumentException::class, "at least 1 second", $createAnElementTimeoutOf0];
+
+$createATimedElementInASetWithNoTimeout = function () use ($ipTable) : void {
+    NamedSet::create($ipTable, "s", SetType::IPV4_ADDR)->withElements(new TimedElement("10.0.0.1", 60));
+};
+
+$cases[] = [
+    "a timed element in a set with no timeout",
+    BadArgumentException::class,
+    "withTimeout()",
+    $createATimedElementInASetWithNoTimeout,
+];
+
+$createDeletingATimedElement = function () use ($ipTable, $saddr) : void {
+    $set = NamedSet::create($ipTable, "s", SetType::IPV4_ADDR)->withTimeout(60);
+    new SetUpdateStatement(SetUpdateOperation::DELETE, $set, new TimedElement($saddr, 10));
+};
+
+$cases[] = [
+    "deleting a timed element",
+    BadArgumentException::class,
+    "can't apply statements or a timeout",
+    $createDeletingATimedElement,
+];
+
+$createATimedElementInASetUpdateWithNoTimeout = function () use ($ipTable, $saddr) : void {
+    $set = NamedSet::create($ipTable, "s", SetType::IPV4_ADDR)->withSize(10);
+    $limit = new ConnectionLimitStatement(5, LimitMatch::OVER_LIMIT);
+    new SetUpdateStatement(SetUpdateOperation::ADD, $set, new TimedElement($saddr, 10), $limit);
+};
+
+$cases[] = [
+    "a timed element in a set update with no timeout",
+    BadArgumentException::class,
+    "in a set with a timeout",
+    $createATimedElementInASetUpdateWithNoTimeout,
+];
+
+$createACopyToANetwork = function () : void {
+    DupStatement::createToAddress("10.0.0.0/8");
+};
+
+$cases[] = ["a copy to a network", InvalidAddressException::class, "network CIDR", $createACopyToANetwork];
+
+$createACopyInAnInetTable = function () : void {
+    Rule::create(Fixtures::createInputChain(new Table("i", Family::INET)), DupStatement::createToAddress("10.0.0.9"));
+};
+
+$cases[] = [
+    "a copy in an inet table",
+    UnsuitableChainException::class,
+    "the ip family, not inet",
+    $createACopyInAnInetTable,
+];
+
+$createACopyToADeviceInAnIpTable = function () use ($input) : void {
+    Rule::create($input, DupStatement::createToDevice("eth1"));
+};
+
+$cases[] = [
+    "a copy to a device in an ip table",
+    UnsuitableChainException::class,
+    "the netdev family, not ip",
+    $createACopyToADeviceInAnIpTable,
+];
+
+$createACopyToA16ByteDeviceName = function () : void {
+    DupStatement::createToDevice("a-sixteen-bytes!");
+};
+
+$cases[] = [
+    "a copy to a 16 byte device name",
+    BadArgumentException::class,
+    "15 bytes",
+    $createACopyToA16ByteDeviceName,
+];
+
+$createForwardingToADeviceInAnIpTable = function () use ($input) : void {
+    Rule::create($input, FwdStatement::createToDevice("eth1"));
+};
+
+$cases[] = [
+    "forwarding to a device in an ip table",
+    UnsuitableChainException::class,
+    "netdev table",
+    $createForwardingToADeviceInAnIpTable,
+];
+
+$createForwardingToANetwork = function () : void {
+    FwdStatement::createToAddress("eth1", "10.0.0.0/8");
+};
+
+$cases[] = ["forwarding to a network", InvalidAddressException::class, "network CIDR", $createForwardingToANetwork];
+
+$createAnIPsecAssociationNumberOf256 = function () : void {
+    IpsecExpression::create(IpsecDirection::IN, IpsecKey::REQID, 256);
+};
+
+$cases[] = [
+    "an IPsec association number of 256",
+    BadArgumentException::class,
+    "from 0 to 255",
+    $createAnIPsecAssociationNumberOf256,
+];
+
+$createAnIPv6CtExpectationInAnIpTable = function () use ($ipTable) : void {
+    new CtExpectation("e", $ipTable, IpVersion::IPV6, Protocol::TCP, 22, 60, 1);
+};
+
+$cases[] = [
+    "an IPv6 ct expectation in an ip table",
+    BadArgumentException::class,
+    "can't be for IPV6",
+    $createAnIPv6CtExpectationInAnIpTable,
+];
+
+$createACtExpectationForPort0 = function () use ($ipTable) : void {
+    new CtExpectation("e", $ipTable, IpVersion::IPV4, Protocol::TCP, 0, 60, 1);
+};
+
+$cases[] = ["a ct expectation for port 0", BadArgumentException::class, "65535", $createACtExpectationForPort0];
+
+$createACtExpectationFor256Connections = function () use ($ipTable) : void {
+    new CtExpectation("e", $ipTable, IpVersion::IPV4, Protocol::TCP, 22, 60, 256);
+};
+
+$cases[] = [
+    "a ct expectation for 256 connections",
+    BadArgumentException::class,
+    "from 1 to 255",
+    $createACtExpectationFor256Connections,
+];
+
+$createACtExpectationWithNoTimeout = function () use ($ipTable) : void {
+    new CtExpectation("e", $ipTable, IpVersion::IPV4, Protocol::TCP, 22, 0, 1);
+};
+
+$cases[] = [
+    "a ct expectation with no timeout",
+    BadArgumentException::class,
+    "at least 1 second",
+    $createACtExpectationWithNoTimeout,
+];
+
+$createABridgeCtExpectation = function () : void {
+    new CtExpectation("e", new Table("b", Family::BRIDGE), IpVersion::IPV4, Protocol::TCP, 22, 60, 1);
+};
+
+$cases[] = ["a bridge ct expectation", BadArgumentException::class, "ip, ip6 or inet", $createABridgeCtExpectation];
+
+$createAcceptingPortForwardsInAnInputChain = function () use ($input) : void {
+    RuleFactory::createAcceptPortForwards($input);
+};
+
+$cases[] = [
+    "accepting port forwards in an input chain",
+    UnsuitableChainException::class,
+    "forward hook",
+    $createAcceptingPortForwardsInAnInputChain,
+];
 
 foreach ($cases as [$description, $exceptionClass, $messageContains, $code])
 {

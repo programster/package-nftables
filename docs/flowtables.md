@@ -138,8 +138,9 @@ Some connections are never offloaded:
   packet.
 - packets arriving on a device that isn't in the flowtable.
 
-A flowtable can also offload connections to the network card itself (hardware offload), on cards that support it.
-That isn't modelled yet.
+A flowtable can also offload connections to the network card itself (hardware offload), on cards that support it,
+and count the packets it handles (its counter flag). Neither is available here: nft's JSON parser silently ignores a
+flowtable's flags, in every version up to at least 1.1.6, so a ruleset loaded with `nft --json` can't set them.
 
 ## Is it worth it?
 It depends on how hard the gateway's CPU works to forward traffic. Check while it's busy, e.g. with `mpstat 1` (from

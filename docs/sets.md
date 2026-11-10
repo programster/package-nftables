@@ -87,6 +87,9 @@ elements = { 10.0.0.1 . 22 }
 - `SetFlag::INTERVAL` is needed for a set holding ranges or prefixes. Adding one without it throws a
   `BadArgumentException`, rather than nft failing to load the ruleset later.
 - `withTimeout()` adds `SetFlag::TIMEOUT` itself, as nft needs it for a timeout.
+- An element can have a timeout of its own, rather than the set's, as a `TimedElement`, e.g.
+  `new TimedElement("10.0.0.9", 3600)`. The set needs a timeout too, so call `withTimeout()` before
+  `withElements()`.
 - `SetFlag::CONSTANT` stops the elements being changed once it's loaded.
 
 ## Sets that rules add to

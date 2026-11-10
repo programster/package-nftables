@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Programster\Nftables;
 
+use Programster\Nftables\Collections\TableFlagCollection;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\TableFlag;
 use Programster\Nftables\Exceptions\BadArgumentException;
@@ -17,8 +18,8 @@ final readonly class Table
     private string $m_name;
     private Family $m_family;
 
-    /** @var string[] - the flags' values, without duplicates. */
-    private array $m_flags;
+    // Without duplicates.
+    private TableFlagCollection $m_flags;
 
 
     /**
@@ -38,7 +39,15 @@ final readonly class Table
         NameLib::assertValidName($name, "table");
         $this->m_name = $name;
         $this->m_family = $family;
-        $this->m_flags = array_values(array_unique(array_column($flags, "value")));
+        // Keyed by value, to leave out duplicates.
+        $uniqueFlags = [];
+
+        foreach ($flags as $flag)
+        {
+            $uniqueFlags[$flag->value] = $flag;
+        }
+
+        $this->m_flags = new TableFlagCollection(array_values($uniqueFlags));
     }
 
 
@@ -53,7 +62,7 @@ final readonly class Table
 
         if (count($this->m_flags) > 0)
         {
-            $table["table"]["flags"] = $this->m_flags;
+            $table["table"]["flags"] = $this->m_flags->column("value");
         }
 
         return $table;

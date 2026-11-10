@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
+use Programster\Nftables\Collections\LogFlagCollection;
 use Programster\Nftables\Enums\LogFlag;
 use Programster\Nftables\Enums\LogLevel;
 use Programster\Nftables\Exceptions\BadArgumentException;
@@ -19,8 +20,8 @@ final readonly class LogStatement implements Statement
     private string $m_prefix;
     private LogLevel $m_level;
 
-    /** @var string[] - the flags' values, without duplicates. */
-    private array $m_flags;
+    // Without duplicates.
+    private LogFlagCollection $m_flags;
 
 
     /**
@@ -44,7 +45,15 @@ final readonly class LogStatement implements Statement
 
         $this->m_prefix = $prefix;
         $this->m_level = $level;
-        $this->m_flags = array_values(array_unique(array_column($flags, "value")));
+        // Keyed by value, to leave out duplicates.
+        $uniqueFlags = [];
+
+        foreach ($flags as $flag)
+        {
+            $uniqueFlags[$flag->value] = $flag;
+        }
+
+        $this->m_flags = new LogFlagCollection(array_values($uniqueFlags));
     }
 
 
@@ -59,7 +68,7 @@ final readonly class LogStatement implements Statement
 
         if (count($this->m_flags) > 0)
         {
-            $log["flags"] = $this->m_flags;
+            $log["flags"] = $this->m_flags->column("value");
         }
 
         return ["log" => $log];

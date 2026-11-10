@@ -6,6 +6,7 @@ namespace Programster\Nftables\Statements;
 
 use Programster\Nftables\BaseChain;
 use Programster\Nftables\ChainLib;
+use Programster\Nftables\Collections\SynproxyFlagCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\SynproxyFlag;
@@ -30,8 +31,8 @@ final readonly class SynproxyStatement implements Statement, ChainRestricted
     private int $m_maximumSegmentSize;
     private int $m_windowScale;
 
-    /** @var string[] - the flags' values, without duplicates. */
-    private array $m_flags;
+    // Without duplicates.
+    private SynproxyFlagCollection $m_flags;
 
 
     /**
@@ -61,7 +62,15 @@ final readonly class SynproxyStatement implements Statement, ChainRestricted
 
         $this->m_maximumSegmentSize = $maximumSegmentSize;
         $this->m_windowScale = $windowScale;
-        $this->m_flags = array_values(array_unique(array_column($flags, "value")));
+        // Keyed by value, to leave out duplicates.
+        $uniqueFlags = [];
+
+        foreach ($flags as $flag)
+        {
+            $uniqueFlags[$flag->value] = $flag;
+        }
+
+        $this->m_flags = new SynproxyFlagCollection(array_values($uniqueFlags));
     }
 
 
@@ -71,7 +80,7 @@ final readonly class SynproxyStatement implements Statement, ChainRestricted
 
         if (count($this->m_flags) > 0)
         {
-            $synproxy["flags"] = $this->m_flags;
+            $synproxy["flags"] = $this->m_flags->column("value");
         }
 
         return ["synproxy" => $synproxy];
