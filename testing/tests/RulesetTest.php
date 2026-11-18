@@ -629,3 +629,11 @@ $testConnectionsOnly = function () use ($describePerSourceLimits) : void {
 };
 
 $smoke->run("Ruleset: per-source connection limits without rates only limit the number open", $testConnectionsOnly);
+
+$testExemptSourcesDeduplicated = function () : void {
+    $limits = new PerSourceConnectionLimits(10, exemptSources: ["198.51.100.7", "198.51.100.7", "2001:db8::7"]);
+    SmokeTestRunner::assertSame(["198.51.100.7", "2001:db8::7"], $limits->getExemptSources(), "the exempt sources");
+};
+
+$smoke->run("Ruleset: per-source connection limits only keep each exempt source once", $testExemptSourcesDeduplicated);
+

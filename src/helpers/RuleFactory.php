@@ -20,6 +20,7 @@ use Programster\Nftables\Enums\FibResult;
 use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\LimitMatch;
+use Programster\Nftables\Enums\MatchMode;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\Operator;
 use Programster\Nftables\Enums\PayloadField;
@@ -555,6 +556,15 @@ final class RuleFactory
             MatchFactory::createDestinationPorts($protocol, $ports),
             MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::NEW)),
         ];
+
+        // An exempt source skips the rules, so it isn't counted. Those of the other IP version could never match.
+        foreach ($limits->getExemptSources() as $exemptSource)
+        {
+            if (NetworkLib::getIpVersion($exemptSource) === $ipVersion)
+            {
+                $matches[] = MatchFactory::createSourceAddress($exemptSource, MatchMode::DOES_NOT_MATCH);
+            }
+        }
 
         $rules = [];
 

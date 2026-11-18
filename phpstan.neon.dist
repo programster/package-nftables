@@ -35,7 +35,7 @@ parameters:
         -
             identifier: argument.type
             path: testing/tests/ValidationTest.php
-            count: 2
+            count: 3
         # This test deliberately writes to readonly collections with array syntax, to check that it throws when the
         # code runs, as well as being reported by the rule.
         -

@@ -1361,6 +1361,40 @@ $cases[] = [
     $createLimitsWithTooLongAName,
 ];
 
+$createLimitsExemptingABadAddress = function () : void {
+    new PerSourceConnectionLimits(10, exemptSources: ["10.0.0.300"]);
+};
+
+$cases[] = [
+    "per-source connection limits exempting an address that isn't one",
+    InvalidAddressException::class,
+    "10.0.0.300",
+    $createLimitsExemptingABadAddress,
+];
+
+$createLimitsExemptingAHostCidr = function () : void {
+    new PerSourceConnectionLimits(10, exemptSources: ["10.0.0.5/24"]);
+};
+
+$cases[] = [
+    "per-source connection limits exempting a CIDR with host bits set",
+    InvalidAddressException::class,
+    "10.0.0.0/24",
+    $createLimitsExemptingAHostCidr,
+];
+
+$createLimitsExemptingANonString = function () : void {
+    // Deliberately the wrong type, to check it's rejected (see phpstan.neon.dist).
+    new PerSourceConnectionLimits(10, exemptSources: [42]);
+};
+
+$cases[] = [
+    "per-source connection limits exempting something that isn't a string",
+    InvalidAddressException::class,
+    "not int",
+    $createLimitsExemptingANonString,
+];
+
 $createLimitsWithANameInUse = function () : void {
     $smtp = new PerSourceConnectionLimits(10, name: "smtp");
     new PerSourceConnectionLimits(10, name: "smtp");

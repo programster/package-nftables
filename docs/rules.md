@@ -424,6 +424,9 @@ ct status dnat accept
   period's limit doesn't use up a longer one's. There can be at most one rate per period, as only the lowest of two
   would ever apply.
 - **There has to be at least one limit**: a maximum open at once, or a rate. Either can be left out.
+- **Some addresses can be exempt**, e.g. your own static IP, with `exemptSources`: a list of IP addresses and network
+  CIDRs. Each limit rule then skips them (`ip saddr != 198.51.100.7`), so their connections aren't limited or counted
+  at all. A rule only uses those of its own IP version, so one limits object can exempt both IPv4 and IPv6 addresses.
 - **Rules given the same limits object share them.** Each address is counted in the limits' named sets,
   `<name>_per_<period>` for each rate and `<name>_connections`, so here an address can have 10 open across ports 465
   and 587, not 10 on each. For a separate count, e.g. for another server, create another `PerSourceConnectionLimits`.

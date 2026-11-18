@@ -7,6 +7,8 @@ namespace Programster\Nftables\Rules;
 use Programster\Nftables\Collections\ConnectionRateLimitCollection;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\ConflictException;
+use Programster\Nftables\Exceptions\InvalidAddressException;
+use Programster\Nftables\Helpers\NetworkLib;
 use Programster\Nftables\Internal\NameLib;
 use WeakMap;
 
@@ -19,6 +21,8 @@ use WeakMap;
  * PerSourceConnectionLimits object shares one count per address. E.g. pass the same object for a server's ports 465
  * and 587, and an address can have $maxConnections open across both ports, not that many on each. For a separate
  * count, create another object.
+ *
+ * Some source addresses can be exempt, e.g. your own, so their connections aren't limited or counted at all.
  *
  * Two objects can never have the same name at once, as they'd then share their sets, and so their counts, by accident.
  * Creating one with a name that another one still has throws a ConflictException.
@@ -40,6 +44,9 @@ final class PerSourceConnectionLimits
     private readonly ConnectionRateLimitCollection $m_rates;
 
     private readonly int $m_maxSources;
+
+    /** @var list<string> - the addresses and network CIDRs whose connections aren't limited. */
+    private readonly array $m_exemptSources;
 
 
     /**
@@ -65,6 +72,12 @@ final class PerSourceConnectionLimits
      * connections are refused until old ones expire, so make it comfortably bigger than the number of clients.
      * Defaults to 65535.
      *
+     * @param list<string> $exemptSources - optionally, IP addresses and network CIDRs whose connections aren't limited
+     * or counted at all, e.g. your own static IP. The rules only use those of the IP version they're for, so one
+     * object can hold both IPv4 and IPv6 ones. Defaults to none.
+     *
+     * @throws InvalidAddressException - if an exempt source isn't an IP address or network CIDR.
+     *
      * @throws BadArgumentException - if there are no limits, $maxConnections or $maxSources is less than 1, two rates
      * are for the same period, or the name is empty or too long.
      *
@@ -75,6 +88,7 @@ final class PerSourceConnectionLimits
         ConnectionRateLimitCollection $rates = new ConnectionRateLimitCollection(),
         ?string $name = null,
         int $maxSources = 65535,
+        array $exemptSources = [],
     )
     {
         if ($maxConnections === null && count($rates) === 0)
@@ -92,6 +106,7 @@ final class PerSourceConnectionLimits
         }
 
         self::assertOneRatePerPeriod($rates);
+        self::assertValidSources($exemptSources);
 
         if ($name === null)
         {
@@ -113,7 +128,37 @@ final class PerSourceConnectionLimits
         $this->m_maxConnections = $maxConnections;
         $this->m_rates = $rates->sort("getPeriodSeconds");
         $this->m_maxSources = $maxSources;
+        $this->m_exemptSources = array_values(array_unique($exemptSources));
         self::getNamesInUse()[$this] = $this->m_name;
+    }
+
+
+    /**
+     * Check that each exempt source is an IP address or network CIDR.
+     * @param array<mixed> $sources - the exempt sources.
+     * @return void
+     * @throws InvalidAddressException - if one isn't.
+     */
+    private static function assertValidSources(array $sources) : void
+    {
+        foreach ($sources as $source)
+        {
+            if (!is_string($source))
+            {
+                $type = get_debug_type($source);
+                $message = "An exempt source must be an IP address or CIDR string, not {$type}.";
+                throw new InvalidAddressException($message);
+            }
+
+            if (str_contains($source, "/"))
+            {
+                NetworkLib::assertValidNetworkCidr($source);
+            }
+            elseif (!NetworkLib::isIpAddress($source))
+            {
+                throw new InvalidAddressException("The exempt source {$source} isn't an IP address or network CIDR.");
+            }
+        }
     }
 
 
@@ -201,4 +246,7 @@ final class PerSourceConnectionLimits
     public function getMaxConnections() : ?int { return $this->m_maxConnections; }
     public function getRates() : ConnectionRateLimitCollection { return $this->m_rates; }
     public function getMaxSources() : int { return $this->m_maxSources; }
+
+    /** @return list<string> */
+    public function getExemptSources() : array { return $this->m_exemptSources; }
 }

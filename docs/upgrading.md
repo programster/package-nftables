@@ -1,5 +1,6 @@
 # Upgrading
 
+- [From 1.0.0-alpha2](#from-100-alpha2)
 - [From 1.0.0-alpha1](#from-100-alpha1)
 - [From 0.x](#from-0x)
   - [Things that behave differently](#things-that-behave-differently)
@@ -9,6 +10,10 @@
   - [RuleFactory](#rulefactory)
   - [MatchFactory](#matchfactory)
   - [Everything else](#everything-else)
+
+## From 1.0.0-alpha2
+Nothing needs changing. `PerSourceConnectionLimits` can now exempt some addresses from its limits, with
+`exemptSources` (see [limiting connections per source](rules.md#limiting-connections-per-source)).
 
 ## From 1.0.0-alpha1
 - **`RuleFactory::createPerSourceConnectionLimits()` takes a `PerSourceConnectionLimits`**, rather than the set name,

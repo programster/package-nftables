@@ -412,6 +412,38 @@ $features[] = [
     $perSourceLines,
 ];
 
+$createExemptConnectionLimits = function (NftablesTarget $target) : Ruleset {
+    $table = new Table("t", Family::IP);
+    $hook = ChainHook::FORWARD;
+    $forward = new BaseChain("forward", $table, ChainType::FILTER, $hook, Priority::FILTER, Policy::ACCEPT);
+    $rates = new ConnectionRateLimitCollection(new ConnectionRateLimit(10, LimitPeriod::MINUTE));
+
+    // The IPv6 source can't match an IPv4 rule, so it's left out of it.
+    $limits = new PerSourceConnectionLimits(
+        rates: $rates,
+        name: "ssh",
+        exemptSources: ["198.51.100.7", "203.0.113.0/24", "2001:db8::7"],
+    );
+
+    $rules = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.22", 22, $limits);
+    return new Ruleset($rules, $target);
+};
+
+$exemptMatches = 'iifname "eth0" ip daddr 10.0.0.22 tcp dport 22 ct state new ip saddr != 198.51.100.7'
+    . ' ip saddr != 203.0.113.0/24';
+
+$exemptRate = "update @ssh_per_minute { ip saddr limit rate over 10/minute burst 10 packets } drop";
+$exemptRateLine = "{$exemptMatches} {$exemptRate}";
+
+$features[] = [
+    "connection limits per source address, with exempt sources (RuleFactory)",
+    "1.0.6",
+    "",
+    [],
+    $createExemptConnectionLimits,
+    [$exemptRateLine],
+];
+
 $createCtExpectation = function (Table $table) : array {
     $expectation = new CtExpectation("data", $table, IpVersion::IPV4, Protocol::TCP, 2021, 60, 12);
     return [[MatchFactory::createDestinationPorts(Protocol::TCP, 21), $expectation->createStatement()]];
