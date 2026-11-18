@@ -23,7 +23,7 @@ Nftables Package
 * [Named objects](docs/objects.md): shared counters, quotas and limits, conntrack helpers, timeouts and expectations,
   synproxies and security marks
 * [Errors](docs/errors.md): the exceptions, and when they're thrown
-* [Upgrading from 0.x](docs/upgrading.md)
+* [Upgrading](docs/upgrading.md)
 * [Testing](docs/testing.md): running the tests locally, on every PHP version and target, and in CI
 
 A PHP package for generating nftables rulesets as JSON, for loading with `nft --json --file`. It's built to make the

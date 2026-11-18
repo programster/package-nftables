@@ -8,6 +8,7 @@
 
 use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Chains\RegularChain;
+use Programster\Nftables\Collections\ConnectionRateLimitCollection;
 use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
 use Programster\Nftables\Enums\BinaryOperator;
@@ -20,10 +21,10 @@ use Programster\Nftables\Enums\Existence;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\FibFlag;
 use Programster\Nftables\Enums\FibResult;
+use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\IpsecDirection;
 use Programster\Nftables\Enums\IpsecKey;
 use Programster\Nftables\Enums\Ipv6ExtensionHeaderField;
-use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\LimitMatch;
 use Programster\Nftables\Enums\LimitPeriod;
 use Programster\Nftables\Enums\MetaKey;
@@ -45,6 +46,7 @@ use Programster\Nftables\Enums\SetUpdateOperation;
 use Programster\Nftables\Enums\TcpOptionField;
 use Programster\Nftables\Enums\Verdict;
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Exceptions\ConflictException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
 use Programster\Nftables\Expressions\BinaryOperationExpression;
@@ -77,6 +79,8 @@ use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedCounter;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
+use Programster\Nftables\Rules\ConnectionRateLimit;
+use Programster\Nftables\Rules\PerSourceConnectionLimits;
 use Programster\Nftables\Rules\PortForward;
 use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Sets\ConnectionStateSet;
@@ -1236,14 +1240,13 @@ $cases[] = [
 ];
 
 // Each tries to limit the connections per source to port 587 of a destination, in a chain of an ip table.
-$createPerSourceLimits = function (ChainHook $hook, ChainType $type, string $to, int $max) use ($ipTable) : void {
+$createPerSourceLimits = function (ChainHook $hook, ChainType $type, string $to) use ($ipTable) : void {
     $chain = Fixtures::createBaseChain($ipTable, $type, $hook);
-    $period = LimitPeriod::MINUTE;
-    RuleFactory::createPerSourceConnectionLimits($chain, "eth0", "smtp", $to, 587, $max, 60, $period);
+    RuleFactory::createPerSourceConnectionLimits($chain, "eth0", $to, 587, new PerSourceConnectionLimits(10));
 };
 
 $createPerSourceLimitsInANatChain = function () use ($createPerSourceLimits) : void {
-    $createPerSourceLimits(ChainHook::PREROUTING, ChainType::NAT, "10.0.0.25", 10);
+    $createPerSourceLimits(ChainHook::PREROUTING, ChainType::NAT, "10.0.0.25");
 };
 
 $cases[] = [
@@ -1254,7 +1257,7 @@ $cases[] = [
 ];
 
 $createPerSourceLimitsToIpv6InAnIpTable = function () use ($createPerSourceLimits) : void {
-    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "fd00::25", 10);
+    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "fd00::25");
 };
 
 $cases[] = [
@@ -1265,7 +1268,7 @@ $cases[] = [
 ];
 
 $createPerSourceLimitsToABadAddress = function () use ($createPerSourceLimits) : void {
-    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "10.0.0.300", 10);
+    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "10.0.0.300");
 };
 
 $cases[] = [
@@ -1275,15 +1278,102 @@ $cases[] = [
     $createPerSourceLimitsToABadAddress,
 ];
 
-$createPerSourceLimitsOfNoConnections = function () use ($createPerSourceLimits) : void {
-    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "10.0.0.25", 0);
+$createLimitsWithNoLimits = function () : void {
+    new PerSourceConnectionLimits();
 };
 
 $cases[] = [
-    "connection limits per source of no connections",
+    "per-source connection limits with no limits",
     BadArgumentException::class,
-    "at least 1",
-    $createPerSourceLimitsOfNoConnections,
+    "at least one limit",
+    $createLimitsWithNoLimits,
+];
+
+$createLimitsOfNoOpenConnections = function () : void {
+    new PerSourceConnectionLimits(0);
+};
+
+$cases[] = [
+    "per-source connection limits of no connections open at once",
+    BadArgumentException::class,
+    "at least 1 connection",
+    $createLimitsOfNoOpenConnections,
+];
+
+$createARateOfNoNewConnections = function () : void {
+    new ConnectionRateLimit(0, LimitPeriod::MINUTE);
+};
+
+$cases[] = [
+    "a connection rate limit of no new connections",
+    BadArgumentException::class,
+    "at least 1 new connection",
+    $createARateOfNoNewConnections,
+];
+
+$createLimitsWithTwoRatesForOnePeriod = function () : void {
+    $rates = new ConnectionRateLimitCollection(
+        new ConnectionRateLimit(10, LimitPeriod::MINUTE),
+        new ConnectionRateLimit(60, LimitPeriod::MINUTE),
+    );
+
+    new PerSourceConnectionLimits(rates: $rates);
+};
+
+$cases[] = [
+    "per-source connection limits with two rates for the same period",
+    BadArgumentException::class,
+    "one rate per minute",
+    $createLimitsWithTwoRatesForOnePeriod,
+];
+
+$createLimitsForNoSources = function () : void {
+    new PerSourceConnectionLimits(10, maxSources: 0);
+};
+
+$cases[] = [
+    "per-source connection limits for no source addresses",
+    BadArgumentException::class,
+    "1 source address",
+    $createLimitsForNoSources,
+];
+
+$createLimitsWithAnEmptyName = function () : void {
+    new PerSourceConnectionLimits(10, name: "");
+};
+
+$cases[] = [
+    "per-source connection limits with an empty name",
+    BadArgumentException::class,
+    "empty name",
+    $createLimitsWithAnEmptyName,
+];
+
+$createLimitsWithTooLongAName = function () : void {
+    // Fits on its own, but not with "_connections" after it.
+    new PerSourceConnectionLimits(10, name: str_repeat("a", 250));
+};
+
+$cases[] = [
+    "per-source connection limits with too long a name for their sets",
+    BadArgumentException::class,
+    "255 bytes",
+    $createLimitsWithTooLongAName,
+];
+
+$createLimitsWithANameInUse = function () : void {
+    $smtp = new PerSourceConnectionLimits(10, name: "smtp");
+    new PerSourceConnectionLimits(10, name: "smtp");
+
+    // Keeps the first one in use until the second one is created.
+    unset($smtp);
+};
+
+$cases[] = [
+    "per-source connection limits with the name of other limits that still exist",
+    ConflictException::class,
+    'already named "smtp"',
+    $createLimitsWithANameInUse,
 ];
 
 $createMasqueradingFromABadAddress = function () use ($ipTable) : void {

@@ -8,6 +8,7 @@
 use Programster\Collections\Exceptions\UnsupportedOperationException;
 use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Chains\RegularChain;
+use Programster\Nftables\Collections\ConnectionRateLimitCollection;
 use Programster\Nftables\Collections\EmptyChainCollection;
 use Programster\Nftables\Collections\EmptyTableCollection;
 use Programster\Nftables\Collections\RuleCollection;
@@ -16,6 +17,7 @@ use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\IpVersion;
+use Programster\Nftables\Enums\LimitPeriod;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\NftablesTarget;
 use Programster\Nftables\Enums\PayloadField;
@@ -35,6 +37,8 @@ use Programster\Nftables\Maps\NamedMap;
 use Programster\Nftables\Maps\NamedVerdictMap;
 use Programster\Nftables\Maps\VerdictMapElement;
 use Programster\Nftables\Objects\NamedCounter;
+use Programster\Nftables\Rules\ConnectionRateLimit;
+use Programster\Nftables\Rules\PerSourceConnectionLimits;
 use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
 use Programster\Nftables\Sets\NamedSet;
@@ -529,3 +533,99 @@ $testCollectionsRejectTheWrongType = function () : void {
 };
 
 $smoke->run("Ruleset: typed collections reject values of the wrong type", $testCollectionsRejectTheWrongType);
+
+$testGeneratedLimitNames = function () : void {
+    $first = new PerSourceConnectionLimits(10);
+    $second = new PerSourceConnectionLimits(10);
+    $pattern = "/^limits_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/";
+    SmokeTestRunner::assertTrue(preg_match($pattern, $first->getName()) === 1, "a generated name is a UUID");
+    SmokeTestRunner::assertTrue($first->getName() !== $second->getName(), "generated names differ");
+};
+
+$smoke->run("Ruleset: per-source connection limits without a name get a unique one", $testGeneratedLimitNames);
+
+$testLimitNamesCanBeReused = function () : void {
+    $createAndForget = function () : void {
+        new PerSourceConnectionLimits(10, name: "reused");
+    };
+
+    $createAndForget();
+
+    // Doesn't throw, as the first object with the name no longer exists.
+    $limits = new PerSourceConnectionLimits(10, name: "reused");
+    SmokeTestRunner::assertSame("reused", $limits->getName(), "the name");
+};
+
+$description = "Ruleset: a per-source connection limits name is free again once its object is gone";
+$smoke->run($description, $testLimitNamesCanBeReused);
+
+// Gets the names of the sets in a ruleset of per-source connection limits, in order, and how many rules it has.
+$describePerSourceLimits = function (RuleCollection $rules) : array {
+    $mode = RulesetResetMode::FLUSH_ENTIRE_RULESET;
+    $commands = (new Ruleset($rules, NftablesTarget::DEBIAN_12, $mode))->toArray()["nftables"];
+    $setNames = [];
+    $ruleCount = 0;
+
+    foreach ($commands as $command)
+    {
+        if (isset($command["set"]) && is_array($command["set"]))
+        {
+            $setNames[] = $command["set"]["name"] ?? "";
+        }
+
+        if (isset($command["rule"]))
+        {
+            $ruleCount++;
+        }
+    }
+
+    return [$setNames, $ruleCount];
+};
+
+$testSharedLimits = function () use ($describePerSourceLimits) : void {
+    $table = new Table("t", Family::IP);
+    $forward = Fixtures::createBaseChain($table, ChainType::FILTER, ChainHook::FORWARD);
+    $rates = new ConnectionRateLimitCollection(new ConnectionRateLimit(60, LimitPeriod::MINUTE));
+    $limits = new PerSourceConnectionLimits(10, $rates, "shared");
+    $smtps = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 465, $limits);
+    $submission = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 587, $limits);
+    [$setNames, $ruleCount] = $describePerSourceLimits($smtps->merge($submission));
+    SmokeTestRunner::assertSame(["shared_per_minute", "shared_connections"], $setNames, "the sets, each added once");
+    SmokeTestRunner::assertSame(4, $ruleCount, "the rules");
+};
+
+$smoke->run("Ruleset: per-source connection limits used twice share their sets", $testSharedLimits);
+
+$testRatesShortestFirst = function () use ($describePerSourceLimits) : void {
+    $table = new Table("t", Family::IP);
+    $forward = Fixtures::createBaseChain($table, ChainType::FILTER, ChainHook::FORWARD);
+
+    $rates = new ConnectionRateLimitCollection(
+        new ConnectionRateLimit(1000, LimitPeriod::DAY),
+        new ConnectionRateLimit(60, LimitPeriod::MINUTE),
+        new ConnectionRateLimit(100, LimitPeriod::HOUR),
+    );
+
+    $limits = new PerSourceConnectionLimits(rates: $rates, name: "rates");
+    $rules = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 465, $limits);
+    [$setNames, $ruleCount] = $describePerSourceLimits($rules);
+    $expected = ["rates_per_minute", "rates_per_hour", "rates_per_day"];
+    SmokeTestRunner::assertSame($expected, $setNames, "the sets, shortest period first, and none for connections");
+    SmokeTestRunner::assertSame(3, $ruleCount, "a rule per rate");
+    $firstRule = json_encode($rules->first()->toArray(), JSON_THROW_ON_ERROR);
+    SmokeTestRunner::assertTrue(str_contains($firstRule, "@rates_per_minute"), "the first rule is per minute");
+};
+
+$smoke->run("Ruleset: per-source connection rates are checked shortest period first", $testRatesShortestFirst);
+
+$testConnectionsOnly = function () use ($describePerSourceLimits) : void {
+    $table = new Table("t", Family::IP);
+    $forward = Fixtures::createBaseChain($table, ChainType::FILTER, ChainHook::FORWARD);
+    $limits = new PerSourceConnectionLimits(10, name: "open");
+    $rules = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 465, $limits);
+    [$setNames, $ruleCount] = $describePerSourceLimits($rules);
+    SmokeTestRunner::assertSame(["open_connections"], $setNames, "the sets");
+    SmokeTestRunner::assertSame(1, $ruleCount, "the rules");
+};
+
+$smoke->run("Ruleset: per-source connection limits without rates only limit the number open", $testConnectionsOnly);

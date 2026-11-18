@@ -8,7 +8,7 @@ worse, loading and doing the wrong thing.
 | `BadArgumentException` | An argument can't be valid nftables, e.g. a port above 65535, a 200 byte rule comment, or a NAT chain on the forward hook | `InvalidArgumentException` |
 | `InvalidAddressException` | A string isn't an IP address, or a network CIDR, where one is needed. For a host CIDR (e.g. 192.168.0.1/24), the message suggests the network. | `BadArgumentException` |
 | `UnsuitableChainException` | A chain can't be used for something, e.g. a port forward given a filter chain, flow offloading outside the forward hook, or a jump to a chain (or use of a set, map, flowtable or named object) in another table | `BadArgumentException` |
-| `ConflictException` | A ruleset is given two different tables, chains, sets, maps, flowtables or named objects with the same name in the same place | `LogicException` |
+| `ConflictException` | A ruleset is given two different tables, chains, sets, maps, flowtables or named objects with the same name in the same place, or a `PerSourceConnectionLimits` is given the name of other limits that still exist | `LogicException` |
 | `UnsupportedFeatureException` | A ruleset is given something its [target](targets.md)'s nft (or kernel) can't load, or would silently ignore | `LogicException` |
 
 All of them implement the `NftablesException` interface (in `Programster\Nftables\Exceptions`), so they can be caught

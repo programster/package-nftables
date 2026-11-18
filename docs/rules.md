@@ -385,42 +385,63 @@ meta l4proto { tcp, udp } flow add @fastpath
 ### Limiting connections per source
 `createPerSourceConnectionLimits()` limits the connections each source address can make to a server, so no one client
 can use up the server's connections (e.g. by opening many and leaving them idle), or flood it with new ones, while
-the other clients are unaffected. It gives two rules, as a `RuleCollection`: one drops the new connections of any
-address over the rate, and the other rejects those of any address that already has the most open at once (with a TCP
-reset, for TCP, so the client knows straight away). E.g. for a mail server behind this machine, with its SMTP ports
-port forwarded to it, at most 10 open at once, and 60 new a minute, from each address on the internet:
+the other clients are unaffected. The limits themselves are a `PerSourceConnectionLimits`: optionally, at most
+`maxConnections` open at once, and any number of rates, each a `ConnectionRateLimit` of at most so many new
+connections per period (e.g. 60 a minute, and 100 an hour). It gives a rule for each rate, which drops the new
+connections of any address over it, and one for the number open at once, which rejects those of any address that
+already has the most open (with a TCP reset, for TCP, so the client knows straight away).
+
+E.g. for a mail server behind this machine, with its SMTP ports port forwarded to it, at most 10 open at once, 60 new a
+minute, and 100 new an hour, from each address on the internet, across both ports:
 
 ```php
-$limits = RuleFactory::createPerSourceConnectionLimits(
-    $forward,
-    "eth0",
-    "smtp",
-    "10.0.0.25",
-    new PortSet(465, 587),
-    maxConnections: 10,
-    maxNewConnections: 60,
-    newConnectionPeriod: LimitPeriod::MINUTE,
+$rates = new ConnectionRateLimitCollection(
+    new ConnectionRateLimit(60, LimitPeriod::MINUTE),
+    new ConnectionRateLimit(100, LimitPeriod::HOUR),
 );
 
-$rules = $limits->merge(new RuleCollection(RuleFactory::createAcceptPortForwards($forward)));
+$smtpLimits = new PerSourceConnectionLimits(maxConnections: 10, rates: $rates, name: "smtp");
+$smtps = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 465, $smtpLimits);
+$submission = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 587, $smtpLimits);
+$rules = $smtps->merge($submission, new RuleCollection(RuleFactory::createAcceptPortForwards($forward)));
 $ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
-iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new update @smtp_rate { ip saddr limit rate over 60/minute burst 60 packets } drop
-iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 465 ct state new update @smtp_per_minute { ip saddr limit rate over 60/minute burst 60 packets } drop
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 465 ct state new update @smtp_per_hour { ip saddr limit rate over 100/hour burst 100 packets } drop
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 465 ct state new add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 587 ct state new update @smtp_per_minute { ip saddr limit rate over 60/minute burst 60 packets } drop
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 587 ct state new update @smtp_per_hour { ip saddr limit rate over 100/hour burst 100 packets } drop
+iifname "eth0" ip daddr 10.0.0.25 tcp dport 587 ct state new add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset
 ct status dnat accept
 ```
 
+- **A connection that's accepted counts towards every limit**: one of the minute's 60, one of the hour's 100, and one
+  of the 10 open until it closes. The rules are checked in order, and the first to refuse a connection ends it there,
+  so a connection refused by the per-minute limit doesn't use up any of the hour's 100.
+- **The rates are checked shortest period first**, whatever order they're given in, so a burst refused by a short
+  period's limit doesn't use up a longer one's. There can be at most one rate per period, as only the lowest of two
+  would ever apply.
+- **There has to be at least one limit**: a maximum open at once, or a rate. Either can be left out.
+- **Rules given the same limits object share them.** Each address is counted in the limits' named sets,
+  `<name>_per_<period>` for each rate and `<name>_connections`, so here an address can have 10 open across ports 465
+  and 587, not 10 on each. For a separate count, e.g. for another server, create another `PerSourceConnectionLimits`.
+- **Two limits objects can't have the same name**, as they'd then share their sets, and so their counts, by accident.
+  Creating one with the name of another that still exists throws a `ConflictException`, which says to pass that same
+  object instead. A name is free again once its object no longer exists.
+- **The name is optional.** Without one, the limits get a unique name of their own, `limits_` followed by a random
+  UUID. It's different every time the code runs, so the ruleset's JSON is too, and it doesn't say what the limits are
+  for. Give a name to make the sets easy to find, e.g. to look inside them with `nft list set ip gateway smtp_per_minute`.
+  It must be unique among the sets and maps in each table the limits are used in.
 - **They don't accept anything**, so they go before whatever does, like `createAcceptPortForwards()` here. A
   `RuleCollection` can't be unpacked into another's constructor with more rules after it, so use `merge()`.
 - **In a forward chain, they match the server's own address and port**, as a port forward has already changed them by
   then. In an input chain, they're for a server on this machine.
 - **Only traffic arriving on the interface given is limited**, so e.g. machines on the LAN aren't.
-- **The burst is the same as the rate**, so a client can open all of its new connections at once (many mail libraries
-  open one per email), rather than having to spread them out.
-- **Each address is tracked in two named sets**, `<name>_rate` and `<name>_connections`, so the name must be unique in
-  the table. They hold at most 65535 addresses each (`maxSources`). Once they're full, new addresses' connections are
+- **The burst is the same as the rate**, so a client can open all of a rate's new connections at once (many mail
+  libraries open one per email), rather than having to spread them out.
+- **The sets hold at most 65535 addresses each** (`maxSources`). Once they're full, new addresses' connections are
   refused until old ones expire, so make it comfortably bigger than the number of clients.
 - **It needs nft 1.0.6** (e.g. Debian 12), as older nft silently drops per-address limits, so the ruleset needs a
   target of at least that.

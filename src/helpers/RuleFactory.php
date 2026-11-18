@@ -20,7 +20,6 @@ use Programster\Nftables\Enums\FibResult;
 use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\LimitMatch;
-use Programster\Nftables\Enums\LimitPeriod;
 use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Enums\Operator;
 use Programster\Nftables\Enums\PayloadField;
@@ -45,6 +44,7 @@ use Programster\Nftables\Expressions\TcpOptionExpression;
 use Programster\Nftables\Internal\ChainLib;
 use Programster\Nftables\Maps\MapElement;
 use Programster\Nftables\Maps\NamedMap;
+use Programster\Nftables\Rules\PerSourceConnectionLimits;
 use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Sets\ConnectionStateSet;
 use Programster\Nftables\Sets\NamedSet;
@@ -479,17 +479,17 @@ final class RuleFactory
 
 
     /**
-     * Create the two rules that limit the connections each source address can make to a server, so no one client can
+     * Create the rules that limit the connections each source address can make to a server, so no one client can
      * use up the server's connections (e.g. by opening many and leaving them idle), or flood it with new ones, while
-     * other clients are unaffected. Each source address can have at most $maxConnections open at once, and open at
-     * most $maxNewConnections per $newConnectionPeriod, in bursts of up to that many at once. The extra connections
-     * are refused: those over the rate are dropped, and those over the number open at once are rejected (with a TCP
-     * reset, for TCP), so the client knows straight away.
+     * other clients are unaffected (see PerSourceConnectionLimits). The extra connections are refused: those over a
+     * rate are dropped, and those over the number open at once are rejected (with a TCP reset, for TCP), so the client
+     * knows straight away.
      *
      * The rules don't accept anything, so add them before whatever accepts the traffic. In a forward chain, after a
      * port forward, the destination is the server's address and port behind this machine, not the ones it was sent to.
-     * Each source address is tracked in two named sets, "{$setName}_rate" and "{$setName}_connections", which the rules
-     * bring with them. Only traffic arriving on $inputInterfaceName is limited, so e.g. the LAN can be left out.
+     * Each source address is counted in the limits' named sets, which the rules bring with them, so rules given
+     * the same limits object share one count per address, e.g. across a server's ports. Only traffic arriving on
+     * $inputInterfaceName is limited, so e.g. the LAN can be left out.
      *
      * Per-address limits need nft 1.0.6 (e.g. Debian 12), as older nft silently drops them, so the ruleset needs a
      * target of at least that.
@@ -499,50 +499,33 @@ final class RuleFactory
      *
      * @param string $inputInterfaceName - the interface the traffic to limit arrives on, typically the WAN interface.
      *
-     * @param string $setName - the start of the two sets' names. Each must be unique among the sets and maps in the
-     * table.
-     *
      * @param string $destinationAddress - the server's IP address (or a network CIDR, for several servers that share
-     * the limits). Its IP version is the version of the source addresses tracked.
+     * the limits). Its IP version is the version of the source addresses counted.
      *
      * @param int|PortSet|PortRange $ports - the server's port, ports or range of ports to limit.
      *
-     * @param int $maxConnections - the most connections each source address can have open at once.
-     *
-     * @param int $maxNewConnections - the most new connections each source address can open per
-     * $newConnectionPeriod.
-     *
-     * @param LimitPeriod $newConnectionPeriod - the period $maxNewConnections is measured over.
+     * @param PerSourceConnectionLimits $limits - the limits.
      *
      * @param Protocol $protocol - the transport protocol. Defaults to TCP.
      *
-     * @param int $maxSources - the most source addresses the sets track at once. Once they're full, new addresses'
-     * connections are refused until old ones expire, so make it comfortably bigger than the number of clients.
-     * Defaults to 65535.
+     * @param string $comment - optionally, a comment for the rules.
      *
-     * @param string $comment - optionally, a comment for both rules.
-     *
-     * @return RuleCollection - the rule for the rate, then the rule for the number open at once.
+     * @return RuleCollection - a rule for each rate, shortest period first, then the rule for the number open at once
+     * (if there's a maximum).
      *
      * @throws UnsuitableChainException - if the chain isn't a filter chain on the input or forward hook, or its table
      * is for the other IP version.
      *
      * @throws InvalidAddressException - if $destinationAddress isn't an IP address or network CIDR.
-     *
-     * @throws BadArgumentException - if a limit or $maxSources is less than 1, a port isn't between 1 and 65535, or
-     * the set name is empty or too long.
+     * @throws BadArgumentException - if a port isn't between 1 and 65535.
      */
     public static function createPerSourceConnectionLimits(
         BaseChain $chain,
         string $inputInterfaceName,
-        string $setName,
         string $destinationAddress,
         int|PortSet|PortRange $ports,
-        int $maxConnections,
-        int $maxNewConnections,
-        LimitPeriod $newConnectionPeriod,
+        PerSourceConnectionLimits $limits,
         Protocol $protocol = Protocol::TCP,
-        int $maxSources = 65535,
         string $comment = "",
     ) : RuleCollection
     {
@@ -563,26 +546,8 @@ final class RuleFactory
         $sourceField = ($ipVersion === IpVersion::IPV4) ? PayloadField::IP_SADDR : PayloadField::IP6_SADDR;
         $sourceAddress = PayloadExpression::create($sourceField);
         $table = $chain->getTable();
-
-        // An address's element only has to last one period, as by then it could have opened its full number again.
-        $periodSeconds = self::getSecondsIn($newConnectionPeriod);
-        $rateSet = NamedSet::create($table, "{$setName}_rate", $addressType)->withTimeout($periodSeconds);
-        $rateSet = $rateSet->withSize($maxSources);
-
-        // No timeout, as the kernel refuses one with connection counts, and removes each address once it has none.
-        $connectionSet = NamedSet::create($table, "{$setName}_connections", $addressType)->withSize($maxSources);
-
-        $tooManyNew = new LimitStatement(
-            $maxNewConnections,
-            $newConnectionPeriod,
-            LimitMatch::OVER_LIMIT,
-            $maxNewConnections,
-        );
-
-        $tooManyOpen = new ConnectionLimitStatement($maxConnections, LimitMatch::OVER_LIMIT);
-        $updateRate = new SetUpdateStatement(SetUpdateOperation::UPDATE, $rateSet, $sourceAddress, $tooManyNew);
-        $addConnection = new SetUpdateStatement(SetUpdateOperation::ADD, $connectionSet, $sourceAddress, $tooManyOpen);
-        $reject = ($protocol === Protocol::TCP) ? RejectStatement::createTcpReset() : RejectStatement::create();
+        $name = $limits->getName();
+        $maxSources = $limits->getMaxSources();
 
         $matches = [
             MatchFactory::createInputInterfaceName($inputInterfaceName),
@@ -591,11 +556,37 @@ final class RuleFactory
             MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::NEW)),
         ];
 
-        $rateStatements = [...$matches, $updateRate, Verdict::DROP];
-        $connectionStatements = [...$matches, $addConnection, $reject];
-        $rateRule = Rule::create($chain, ...$rateStatements)->withComment($comment);
-        $connectionRule = Rule::create($chain, ...$connectionStatements)->withComment($comment);
-        return new RuleCollection($rateRule, $connectionRule);
+        $rules = [];
+
+        // The rates come shortest period first.
+        foreach ($limits->getRates() as $rate)
+        {
+            // An address's element only has to last one period, as by then it could have opened its full number again.
+            $period = $rate->getPeriod();
+            $rateSet = NamedSet::create($table, "{$name}_per_{$period->value}", $addressType);
+            $rateSet = $rateSet->withTimeout($rate->getPeriodSeconds())->withSize($maxSources);
+            $max = $rate->getMaxNewConnections();
+            $tooManyNew = new LimitStatement($max, $period, LimitMatch::OVER_LIMIT, $max);
+            $updateRate = new SetUpdateStatement(SetUpdateOperation::UPDATE, $rateSet, $sourceAddress, $tooManyNew);
+            $rateStatements = [...$matches, $updateRate, Verdict::DROP];
+            $rules[] = Rule::create($chain, ...$rateStatements)->withComment($comment);
+        }
+
+        $maxConnections = $limits->getMaxConnections();
+
+        if ($maxConnections !== null)
+        {
+            // No timeout, as the kernel refuses one with connection counts, and removes each address once it has none.
+            $connectionSet = NamedSet::create($table, "{$name}_connections", $addressType)->withSize($maxSources);
+            $tooManyOpen = new ConnectionLimitStatement($maxConnections, LimitMatch::OVER_LIMIT);
+            $add = SetUpdateOperation::ADD;
+            $addConnection = new SetUpdateStatement($add, $connectionSet, $sourceAddress, $tooManyOpen);
+            $reject = ($protocol === Protocol::TCP) ? RejectStatement::createTcpReset() : RejectStatement::create();
+            $connectionStatements = [...$matches, $addConnection, $reject];
+            $rules[] = Rule::create($chain, ...$connectionStatements)->withComment($comment);
+        }
+
+        return new RuleCollection(...$rules);
     }
 
 
@@ -820,22 +811,5 @@ final class RuleFactory
         }
 
         return new StatementCollection(...$matches);
-    }
-
-
-    /**
-     * Get the number of seconds in a limit's period.
-     * @param LimitPeriod $period - the period.
-     * @return int
-     */
-    private static function getSecondsIn(LimitPeriod $period) : int
-    {
-        return match ($period) {
-            LimitPeriod::SECOND => 1,
-            LimitPeriod::MINUTE => 60,
-            LimitPeriod::HOUR => 3600,
-            LimitPeriod::DAY => 86400,
-            LimitPeriod::WEEK => 604800,
-        };
     }
 }

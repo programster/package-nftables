@@ -16,6 +16,7 @@
 
 use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Chains\EmptyChain;
+use Programster\Nftables\Collections\ConnectionRateLimitCollection;
 use Programster\Nftables\Collections\EmptyChainCollection;
 use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\RuleCollection;
@@ -62,6 +63,8 @@ use Programster\Nftables\Objects\CtTimeout;
 use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
+use Programster\Nftables\Rules\ConnectionRateLimit;
+use Programster\Nftables\Rules\PerSourceConnectionLimits;
 use Programster\Nftables\Rules\PortForward;
 use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
@@ -368,34 +371,45 @@ $createPerSourceConnectionLimits = function (NftablesTarget $target) : Ruleset {
     $hook = ChainHook::FORWARD;
     $forward = new BaseChain("forward", $table, ChainType::FILTER, $hook, Priority::FILTER, Policy::ACCEPT);
 
-    $limits = RuleFactory::createPerSourceConnectionLimits(
-        $forward,
-        "eth0",
-        "smtp",
-        "10.0.0.25",
-        new PortSet(465, 587),
-        10,
-        60,
-        LimitPeriod::MINUTE,
-        comment: "SMTP",
+    // The same limits for both ports, so they share one count of each address's connections. The rates are given
+    // longest period first, but checked shortest first.
+    $rates = new ConnectionRateLimitCollection(
+        new ConnectionRateLimit(100, LimitPeriod::HOUR),
+        new ConnectionRateLimit(60, LimitPeriod::MINUTE),
     );
 
-    return new Ruleset($limits, $target);
+    $limits = new PerSourceConnectionLimits(10, $rates, "smtp");
+    $smtps = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 465, $limits, comment: "SMTP");
+    $submission = RuleFactory::createPerSourceConnectionLimits($forward, "eth0", "10.0.0.25", 587, $limits);
+
+    return new Ruleset($smtps->merge($submission), $target);
 };
 
-$perSourceMatches = 'iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new';
-$overRate = "update @smtp_rate { ip saddr limit rate over 60/minute burst 60 packets } drop";
+$smtpsMatches = 'iifname "eth0" ip daddr 10.0.0.25 tcp dport 465 ct state new';
+$submissionMatches = 'iifname "eth0" ip daddr 10.0.0.25 tcp dport 587 ct state new';
+$overMinute = "update @smtp_per_minute { ip saddr limit rate over 60/minute burst 60 packets } drop";
+$overHour = "update @smtp_per_hour { ip saddr limit rate over 100/hour burst 100 packets } drop";
 $overConnections = "add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset";
-$rateLine = "{$perSourceMatches} {$overRate} comment \"SMTP\"";
-$connectionsLine = "{$perSourceMatches} {$overConnections} comment \"SMTP\"";
+
+$perSourceLines = [
+    "{$smtpsMatches} {$overMinute} comment \"SMTP\"",
+    "{$smtpsMatches} {$overHour} comment \"SMTP\"",
+    "{$smtpsMatches} {$overConnections} comment \"SMTP\"",
+    "{$submissionMatches} {$overMinute}",
+    "{$submissionMatches} {$overHour}",
+    "{$submissionMatches} {$overConnections}",
+    "timeout 1m",
+    "timeout 1h",
+    "size 65535",
+];
 
 $features[] = [
-    "connection limits per source address (RuleFactory)",
+    "connection limits per source address, shared by two ports (RuleFactory)",
     "1.0.6",
     "",
     [],
     $createPerSourceConnectionLimits,
-    [$rateLine, $connectionsLine, "timeout 1m", "size 65535"],
+    $perSourceLines,
 ];
 
 $createCtExpectation = function (Table $table) : array {

@@ -1,17 +1,32 @@
-# Upgrading from 0.x
+# Upgrading
 
-- [Things that behave differently](#things-that-behave-differently)
-- [Renamed classes](#renamed-classes)
-- [Renamed enums](#renamed-enums)
-- [Renamed exceptions](#renamed-exceptions)
-- [RuleFactory](#rulefactory)
-- [MatchFactory](#matchfactory)
-- [Everything else](#everything-else)
+- [From 1.0.0-alpha1](#from-100-alpha1)
+- [From 0.x](#from-0x)
+  - [Things that behave differently](#things-that-behave-differently)
+  - [Renamed classes](#renamed-classes)
+  - [Renamed enums](#renamed-enums)
+  - [Renamed exceptions](#renamed-exceptions)
+  - [RuleFactory](#rulefactory)
+  - [MatchFactory](#matchfactory)
+  - [Everything else](#everything-else)
+
+## From 1.0.0-alpha1
+- **`RuleFactory::createPerSourceConnectionLimits()` takes a `PerSourceConnectionLimits`**, rather than the set name,
+  the limits and `$maxSources` separately: `createPerSourceConnectionLimits($chain, $inputInterfaceName,
+  $destinationAddress, $ports, $limits, $protocol, $comment)`, with
+  `new PerSourceConnectionLimits($maxConnections, $rates, $name, $maxSources)`. The rate is now a
+  `ConnectionRateLimit($maxNewConnections, $period)`, in a `ConnectionRateLimitCollection`, so there can be several,
+  e.g. one a minute and one an hour, and the maximum open at once is optional. The rate's set is now named
+  `<name>_per_<period>` (e.g. `smtp_per_minute`), rather than `<name>_rate`. Pass the same limits object to share one
+  count per address between rules, e.g. across a server's ports. Its name is optional, and two objects can't have the
+  same one. See [limiting connections per source](rules.md#limiting-connections-per-source).
+
+## From 0.x
 
 1.0 renames nearly everything, so an upgrade is mostly a search and replace, but a few things also behave
 differently. Read those first.
 
-## Things that behave differently
+### Things that behave differently
 - **Forwarding rules now accept.** `createForwardingRule()` built a rule with no verdict, which matched packets but did
   nothing with them. Its replacement, `createForward()`, ends with accept. If you added the rules it built, they now
   let traffic through.
@@ -39,7 +54,7 @@ differently. Read those first.
   arguments, e.g. `new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE)`, and have no `add()`. Use
   `merge()` to get a new collection with more elements.
 
-## Renamed classes
+### Renamed classes
 1.0's classes are grouped into namespaces under `Programster\Nftables` (see
 [namespaces](getting-started.md#namespaces)), so the names below include them, e.g. `Tables\Table` is
 `Programster\Nftables\Tables\Table`. Only `Ruleset` is at the top.
@@ -60,7 +75,7 @@ differently. Read those first.
 | `NftablesLib::isValidCidr()`, `isValidNetworkCidr()` | `Helpers\NetworkLib::isValidCidr()`, `isValidNetworkCidr()` |
 | `PortRange::$minPort`, `$maxPort` | `Sets\PortRange::getMinPort()`, `getMaxPort()` |
 
-## Renamed enums
+### Renamed enums
 | 0.x | 1.0 |
 |---|---|
 | `NftablesFamily` | `Family` |
@@ -88,7 +103,7 @@ differently. Read those first.
 | `NF_IP_PRI_SELINUX_LAST` | `225` |
 | `NF_IP_PRI_CONNTRACK_HELPER` | `300` |
 
-## Renamed exceptions
+### Renamed exceptions
 | 0.x | 1.0 |
 |---|---|
 | `ExceptionChainConflict` | `ConflictException` |
@@ -100,7 +115,7 @@ differently. Read those first.
 Every exception now implements `NftablesException`, and a few places that threw a plain `Exception` throw one of these
 instead. See [Errors](errors.md).
 
-## RuleFactory
+### RuleFactory
 The chain always comes first now, and the parameters have clearer names, which matters if you pass them by name.
 
 | 0.x | 1.0 |
@@ -115,7 +130,7 @@ The chain always comes first now, and the parameters have clearer names, which m
 `createPortForward()` now refuses to forward a range of ports to a different range, which nft can't do one to one, and
 `createForward()` refuses a SYN check on anything but TCP.
 
-## MatchFactory
+### MatchFactory
 | 0.x | 1.0 |
 |---|---|
 | `createMatchDestinationPorts($protocol, ...$ports)` | `createDestinationPorts($protocol, $ports)`, with an `int`, `PortSet` or `PortRange` |
@@ -130,7 +145,7 @@ The chain always comes first now, and the parameters have clearer names, which m
 Most of them now take a `MatchMode`, to negate them, and there are new ones: `createSourcePorts()`, `createInSet()`,
 `createTransportProtocol()` and `createIcmpv6Types()`.
 
-## Everything else
+### Everything else
 New in 1.0, and covered in the rest of the docs: [targets](targets.md),
 [regular chains](tables-and-chains.md#regular-chains) with jumps and gotos, [named sets](sets.md),
 [maps and verdict maps](maps.md), [flowtables](flowtables.md), [named objects](objects.md) (counters, quotas, limits,
