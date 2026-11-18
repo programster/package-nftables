@@ -29,7 +29,7 @@ final class Compatibility
     /**
      * Check that a target can load a definition.
      *
-     * @param array $definition - a table, chain, set or rule's toArray().
+     * @param array<string, mixed> $definition - a table, chain, set or rule's toArray().
      *
      * @param NftablesTarget $target - where it will be loaded.
      *
@@ -58,6 +58,7 @@ final class Compatibility
     public static function getRequirements() : FeatureRequirementCollection
     {
         // They never change, so they're only created once.
+        /** @var FeatureRequirementCollection|null $requirements */
         static $requirements = null;
 
         if ($requirements === null)
@@ -66,15 +67,15 @@ final class Compatibility
             $rhel9 = [NftablesTarget::ROCKY_9, NftablesTarget::ALMA_9, NftablesTarget::RHEL_9];
 
             $isDormantTable = function (array $definition) : bool {
-                return in_array("dormant", $definition["table"]["flags"] ?? [], true);
+                return in_array("dormant", self::getArrayAt($definition, "table", "flags"), true);
             };
 
             $isDeviceChain = function (array $definition) : bool {
-                return in_array($definition["chain"]["hook"] ?? "", ["ingress", "egress"], true);
+                return in_array(self::getValueAt($definition, "chain", "hook"), ["ingress", "egress"], true);
             };
 
             $isEgressChain = function (array $definition) : bool {
-                return ($definition["chain"]["hook"] ?? "") === "egress";
+                return self::getValueAt($definition, "chain", "hook") === "egress";
             };
 
             $isFlowtable = function (array $definition) : bool {
@@ -82,7 +83,7 @@ final class Compatibility
             };
 
             $isMapOfConcatenations = function (array $definition) : bool {
-                return is_array($definition["map"]["map"] ?? null);
+                return is_array(self::getValueAt($definition, "map", "map"));
             };
 
             $hasAnonymousConcatMap = function (array $definition) : bool {
@@ -90,9 +91,9 @@ final class Compatibility
 
                 foreach (self::findInRule($definition, "map") as $lookup)
                 {
-                    foreach (is_array($lookup) ? ($lookup["data"]["set"] ?? []) : [] as $element)
+                    foreach (self::getArrayAt($lookup, "data", "set") as $element)
                     {
-                        $found = $found || isset($element[1]["concat"]);
+                        $found = $found || self::hasValueAt($element, 1, "concat");
                     }
                 }
 
@@ -104,7 +105,7 @@ final class Compatibility
 
                 foreach (self::findInRule($definition, "set") as $set)
                 {
-                    $found = $found || isset($set["stmt"]);
+                    $found = $found || self::hasValueAt($set, "stmt");
                 }
 
                 return $found;
@@ -125,7 +126,7 @@ final class Compatibility
 
                     foreach (self::findInRule($definition, "socket") as $socket)
                     {
-                        $found = $found || (($socket["key"] ?? "") === $key);
+                        $found = $found || (is_array($socket) && ($socket["key"] ?? "") === $key);
                     }
 
                     return $found;
@@ -135,7 +136,7 @@ final class Compatibility
             };
 
             $isNamedSynproxy = function (array $definition) : bool {
-                return isset($definition["synproxy"]["name"]);
+                return self::hasValueAt($definition, "synproxy", "name");
             };
 
             // Each of these checks whether a rule uses a kind of statement or expression.
@@ -358,17 +359,17 @@ final class Compatibility
     /**
      * Find every value stored under a key, at any depth, in a rule's definition.
      *
-     * @param array $definition - a table, chain, set or rule's toArray(). Only a rule's is
+     * @param array<mixed> $definition - a table, chain, set or rule's toArray(). Only a rule's is
      * searched.
      *
      * @param string $key - the key, e.g. "tproxy".
      *
-     * @return array - the values, or nothing if the definition isn't a rule's.
+     * @return list<mixed> - the values, or nothing if the definition isn't a rule's.
      */
     private static function findInRule(array $definition, string $key) : array
     {
         $values = [];
-        $toSearch = isset($definition["rule"]) ? [$definition["rule"]] : [];
+        $toSearch = [self::getArrayAt($definition, "rule")];
 
         while (count($toSearch) > 0)
         {
@@ -389,5 +390,59 @@ final class Compatibility
         }
 
         return $values;
+    }
+
+
+    /**
+     * Get the array at a path of keys in some JSON, e.g. ["data", "set"] for $json["data"]["set"].
+     *
+     * @param mixed $json - the JSON, or part of it.
+     *
+     * @param string|int ...$path - the keys, outermost first.
+     *
+     * @return array<mixed> - the array there, or an empty one if there isn't an array there, as a feature that isn't
+     * there isn't used.
+     */
+    private static function getArrayAt(mixed $json, string|int ...$path) : array
+    {
+        $value = self::getValueAt($json, ...$path);
+        return is_array($value) ? $value : [];
+    }
+
+
+    /**
+     * Get the value at a path of keys in some JSON, as ?? would, e.g. ["chain", "hook"] for $json["chain"]["hook"].
+     *
+     * @param mixed $json - the JSON, or part of it.
+     *
+     * @param string|int ...$path - the keys, outermost first.
+     *
+     * @return mixed - the value there, or null if there isn't one, as a feature that isn't there isn't used.
+     */
+    private static function getValueAt(mixed $json, string|int ...$path) : mixed
+    {
+        $value = $json;
+
+        foreach ($path as $key)
+        {
+            $value = is_array($value) ? ($value[$key] ?? null) : null;
+        }
+
+        return $value;
+    }
+
+
+    /**
+     * Check whether there's a value (other than null) at a path of keys in some JSON, as isset() would.
+     *
+     * @param mixed $json - the JSON, or part of it.
+     *
+     * @param string|int ...$path - the keys, outermost first, e.g. "stmt" for $json["stmt"].
+     *
+     * @return bool
+     */
+    private static function hasValueAt(mixed $json, string|int ...$path) : bool
+    {
+        return self::getValueAt($json, ...$path) !== null;
     }
 }

@@ -115,7 +115,11 @@ $createRules = function (Family $family, ChainHook $hook, int|Priority $priority
         $chain = new BaseChain("chain", $table, $type, $hook, $priority, Policy::ACCEPT);
         $rules = [];
 
-        foreach ($createStatements($table) as $statements)
+        // Closures' parameters can't say what they return, so this says what $createStatements does.
+        /** @var list<list<Statement>> $statementLists */
+        $statementLists = $createStatements($table);
+
+        foreach ($statementLists as $statements)
         {
             $rules[] = Rule::create($chain, ...$statements);
         }

@@ -46,6 +46,7 @@ use Programster\Nftables\Tables\EmptyTable;
 use Programster\Nftables\Tables\Flowtable;
 use Programster\Nftables\Tables\Table;
 use Programster\Nftables\Testing\Fixtures;
+use Programster\Nftables\Testing\JsonLib;
 use Programster\Nftables\Testing\SmokeTestRunner;
 
 /** @var SmokeTestRunner $smoke */
@@ -179,9 +180,9 @@ $smoke->run("Ruleset: FLUSH_ENTIRE_RULESET flushes once and deletes no tables", 
 
 $testFlushIsJsonNull = function () use ($noRules) : void {
     $ruleset = new Ruleset($noRules, resetMode: RulesetResetMode::FLUSH_ENTIRE_RULESET);
-    $flush = json_decode($ruleset->toJson(), false, 512, JSON_THROW_ON_ERROR)->nftables[1]->flush;
-    SmokeTestRunner::assertTrue(property_exists($flush, "ruleset"), "the flush has a ruleset key");
-    SmokeTestRunner::assertSame(null, $flush->ruleset, "the flush's ruleset");
+    $flush = JsonLib::getObject(JsonLib::decode($ruleset->toJson()), "nftables", 1, "flush");
+    SmokeTestRunner::assertTrue(array_key_exists("ruleset", $flush), "the flush has a ruleset key");
+    SmokeTestRunner::assertSame(null, $flush["ruleset"], "the flush's ruleset");
 };
 
 $smoke->run("Ruleset: the flush is encoded as JSON null", $testFlushIsJsonNull);

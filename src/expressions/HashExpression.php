@@ -16,9 +16,14 @@ final readonly class HashExpression implements Expression
     // The numbers are 32 bits.
     private const MAX_VALUE = 0xFFFFFFFF;
 
+    /** @var array<string, mixed> - the hash, in the form nftables expects. */
     private array $m_value;
 
 
+    /**
+     * Create the hash.
+     * @param array<string, mixed> $value - the hash, in the form nftables expects.
+     */
     private function __construct(array $value)
     {
         $this->m_value = $value;

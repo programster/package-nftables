@@ -13,9 +13,14 @@ use Programster\Nftables\Exceptions\BadArgumentException;
  */
 final readonly class PayloadExpression implements Expression
 {
+    /** @var array<string, mixed> - the payload expression, in the form nftables expects. */
     private array $m_value;
 
 
+    /**
+     * Create the payload expression.
+     * @param array<string, mixed> $value - the payload expression, in the form nftables expects.
+     */
     private function __construct(array $value)
     {
         $this->m_value = $value;

@@ -11,13 +11,14 @@ namespace Programster\Nftables\Expressions;
  */
 final readonly class RawExpression implements Expression
 {
+    /** @var array<mixed>|string|int|bool */
     private array|string|int|bool $m_value;
 
 
     /**
      * Create a raw expression.
      *
-     * @param array|string|int|bool $value - the expression, exactly as nftables' JSON expects it, e.g.
+     * @param array<mixed>|string|int|bool $value - the expression, exactly as nftables' JSON expects it, e.g.
      * ["numgen" => ["mode" => "random", "mod" => 2]].
      */
     public function __construct(array|string|int|bool $value)

@@ -140,6 +140,8 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
 
         foreach (TestTarget::hasCurrentListings() ? $expectedLines : [] as $expectedLine)
         {
+            // Closures' parameters can't say what their arrays hold, so this says what each line's wordings are.
+            /** @var list<string> $wordings */
             $wordings = is_array($expectedLine) ? $expectedLine : [$expectedLine];
             $listed = array_intersect($wordings, $listing);
             $what = "nft listed " . json_encode($wordings) . " (in " . json_encode($listing) . ")";
@@ -150,6 +152,7 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
     // Load some rules, and check nft lists each of them as expected.
     $assertRulesLoadAs = function (array $expectedLines, Rule ...$rules) use ($assertLoadsAs) : void {
         $ruleset = new Ruleset(new RuleCollection(...$rules), TestTarget::detect());
+        /** @var list<string|list<string>> $expectedLines - each line, or a list of the ways nft versions word it. */
         $assertLoadsAs($ruleset, ...$expectedLines);
     };
 

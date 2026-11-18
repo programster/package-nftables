@@ -57,7 +57,7 @@ abstract readonly class NamedObject implements TableItem
     /**
      * Get the parts of the object's definition that every object has.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     protected function getIdentifier() : array
     {

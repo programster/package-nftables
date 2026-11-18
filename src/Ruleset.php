@@ -161,7 +161,7 @@ final readonly class Ruleset implements JsonSerializable
     /**
      * Get the ruleset in the form nftables expects, ready to be JSON encoded.
      *
-     * @return array
+     * @return array{nftables: list<array<string, mixed>>}
      */
     public function toArray() : array
     {
@@ -212,7 +212,7 @@ final readonly class Ruleset implements JsonSerializable
     /**
      * Get the ruleset in the form json_encode() should use, so it can be encoded directly.
      *
-     * @return array
+     * @return array{nftables: list<array<string, mixed>>}
      */
     public function jsonSerialize() : array
     {
@@ -303,7 +303,7 @@ final readonly class Ruleset implements JsonSerializable
      *
      * @param Table|TableItem $existing - what's already stored there.
      *
-     * @param array $definition - the new table or item's toArray().
+     * @param array<string, mixed> $definition - the new table or item's toArray().
      *
      * @param string $description - what the new table or item is, for the message, e.g. "chain input".
      *

@@ -338,15 +338,13 @@ $backends = new AnonymousMap(new MapElement(0, "10.0.0.5"), new MapElement(1, "1
 $takeTurns = new NumgenExpression(NumgenMode::INCREMENTAL, 2);
 $isWeb = MatchFactory::createDestinationPorts(Protocol::TCP, 80);
 
-$rules = new RuleCollection(
-    Rule::create($prerouting, $isWeb, DnatStatement::createFromMap(IpVersion::IPV4, $backends->lookUp($takeTurns))),
-);
-
-$ruleset = new Ruleset($rules);
-
 $knownPorts = new AnonymousVerdictMap(new VerdictMapElement(22, Verdict::ACCEPT), new VerdictMapElement(25, Verdict::DROP));
 
-$rules = new RuleCollection(Rule::create($input, $knownPorts->lookUp($destinationPort)));
+$rules = new RuleCollection(
+    Rule::create($prerouting, $isWeb, DnatStatement::createFromMap(IpVersion::IPV4, $backends->lookUp($takeTurns))),
+    Rule::create($input, $knownPorts->lookUp($destinationPort)),
+);
+
 $ruleset = new Ruleset($rules);
 ```
 

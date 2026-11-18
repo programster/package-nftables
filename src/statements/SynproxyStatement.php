@@ -74,6 +74,10 @@ final readonly class SynproxyStatement implements Statement, ChainRestricted
     }
 
 
+    /**
+     * Get the statement in the form nftables expects, which a NamedSynproxy's definition is also built from.
+     * @return array{synproxy: array<string, mixed>}
+     */
     public function toArray() : array
     {
         $synproxy = ["mss" => $this->m_maximumSegmentSize, "wscale" => $this->m_windowScale];

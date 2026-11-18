@@ -11,7 +11,9 @@ use Programster\Nftables\Internal\ExpressionLib;
  */
 final readonly class RangeExpression implements Expression
 {
+    /** @var array<mixed>|string|int|bool - the start, in the form nftables expects. */
     private array|string|int|bool $m_from;
+    /** @var array<mixed>|string|int|bool - the end, in the form nftables expects. */
     private array|string|int|bool $m_to;
 
 

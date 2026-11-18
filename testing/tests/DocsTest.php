@@ -27,7 +27,15 @@ catch (RuntimeException $e)
     $smoke->skip("checking the docs' nft listings against nft", $e->getMessage());
 }
 
-$documents = [$repoDir . "/README.md", ...glob($repoDir . "/docs/*.md")];
+$docPages = glob($repoDir . "/docs/*.md");
+
+// Otherwise the docs would quietly go unchecked.
+if ($docPages === false)
+{
+    throw new RuntimeException("Couldn't list the pages in {$repoDir}/docs.");
+}
+
+$documents = [$repoDir . "/README.md", ...$docPages];
 
 foreach ($documents as $document)
 {

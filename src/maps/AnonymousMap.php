@@ -55,7 +55,7 @@ final readonly class AnonymousMap
     /**
      * Get the map in the form nftables expects.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toJsonValue() : array
     {

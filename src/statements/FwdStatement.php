@@ -18,9 +18,14 @@ use Programster\Nftables\Helpers\NetworkLib;
  */
 final readonly class FwdStatement implements Statement, ChainRestricted
 {
+    /** @var array<string, mixed> - the statement's body, in the form nftables expects. */
     private array $m_body;
 
 
+    /**
+     * Create a fwd statement.
+     * @param array<string, mixed> $body - the statement's body, in the form nftables expects.
+     */
     private function __construct(array $body)
     {
         $this->m_body = $body;

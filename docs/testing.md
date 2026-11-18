@@ -89,11 +89,12 @@ NFTABLES_TEST_ONLY="Validation" composer test   # only the input checks
 vendor/bin/phpstan
 ```
 
-It's set up in `phpstan.neon.dist`, at level 5, for every supported PHP version. It includes
+It's set up in `phpstan.neon.dist`, at level 10 (the highest), for every supported PHP version. It includes
 [programster/collections](https://github.com/programster/package-collections)' rule, which reports writing to a
 readonly collection with array syntax (e.g. `$rule->getStatements()[] = $statement`) where it's written, rather than
 when it throws. The only errors it ignores are the ones the tests cause on purpose, by passing the wrong type or
-writing to a readonly collection, to check that it's rejected.
+writing to a readonly collection, to check that it's rejected, and the arrays returned by one-line accessors, which
+have no docblock to say what they hold.
 
 ## Continuous integration
 `.github/workflows/tests.yml` runs `testing/run-all-php-versions.sh` and `testing/run-all-targets.sh`, as two jobs, on

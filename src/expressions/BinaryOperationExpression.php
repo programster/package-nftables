@@ -17,6 +17,7 @@ use Programster\Nftables\Internal\ExpressionLib;
 final readonly class BinaryOperationExpression implements Expression
 {
     private BinaryOperator $m_operator;
+    /** @var list<array<mixed>|string|int|bool> - the operands, in the form nftables expects. */
     private array $m_operands;
 
 

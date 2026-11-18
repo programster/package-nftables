@@ -13,6 +13,7 @@ use Programster\Nftables\Internal\ExpressionLib;
  */
 final readonly class ConcatExpression implements Expression
 {
+    /** @var list<array<mixed>|string|int|bool> - the parts, in the form nftables expects. */
     private array $m_parts;
 
 

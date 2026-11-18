@@ -55,7 +55,7 @@ final readonly class Table
     /**
      * Get the table in the form nftables expects.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray() : array
     {
@@ -73,7 +73,7 @@ final readonly class Table
     /**
      * Get just what identifies the table (its family and name), in the form nftables expects, e.g. for deleting it.
      *
-     * @return array
+     * @return array{table: array{family: string, name: string}}
      */
     public function toIdentifierArray() : array
     {

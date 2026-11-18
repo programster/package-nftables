@@ -40,7 +40,7 @@ final readonly class MapElement
     /**
      * Get the element in the form nftables expects, as a key and value pair.
      *
-     * @return array
+     * @return list<mixed>
      */
     public function toJsonValue() : array
     {

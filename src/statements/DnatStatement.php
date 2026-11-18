@@ -22,6 +22,7 @@ use Programster\Nftables\Tables\ReferencesTableItems;
  */
 final readonly class DnatStatement implements Statement, ReferencesTableItems
 {
+    /** @var array<string, mixed> - the statement's body, in the form nftables expects. */
     private array $m_body;
 
     // The named maps it looks the address or port up in.
@@ -31,7 +32,7 @@ final readonly class DnatStatement implements Statement, ReferencesTableItems
     /**
      * Create a dnat statement. Use create() or createFromMap().
      *
-     * @param array $body - the statement's body, in the form nftables expects.
+     * @param array<string, mixed> $body - the statement's body, in the form nftables expects.
      *
      * @param TableItemCollection $referencedItems - the named maps it looks the address or port up in.
      */

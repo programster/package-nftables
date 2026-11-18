@@ -162,7 +162,7 @@ final class SmokeTestRunner
     /**
      * Check that a list contains a value (compared with ===), e.g. that nft's listing contains a line.
      *
-     * @param array $list - the list to look in.
+     * @param array<mixed> $list - the list to look in.
      *
      * @param mixed $value - the value it should contain.
      *

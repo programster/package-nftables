@@ -27,7 +27,7 @@ final class ExpressionLib
      *
      * @param Expression|string|int $value - the value to convert.
      *
-     * @return array|string|int|bool
+     * @return array<mixed>|string|int|bool
      *
      * @throws BadArgumentException - if a plain string starts with "@", which nftables would read as a reference to a
      * set. Use a SetReference (from NamedSet::getReference()) for that, so a value can't become one by accident.
@@ -57,7 +57,7 @@ final class ExpressionLib
      *
      * @param Expression|string|int ...$values - the values to convert.
      *
-     * @return array
+     * @return list<array<mixed>|string|int|bool>
      *
      * @throws BadArgumentException - if a plain string starts with "@" (see toJsonValue()).
      */

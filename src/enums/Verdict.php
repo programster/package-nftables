@@ -27,7 +27,7 @@ enum Verdict : string implements Statement
     /**
      * Get the verdict as a statement, in the form nftables expects.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray() : array
     {

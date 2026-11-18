@@ -15,6 +15,7 @@ use Programster\Nftables\Sets\PortRange;
  */
 final readonly class RedirectStatement implements Statement
 {
+    /** @var array<string, mixed> - the statement's body, in the form nftables expects. */
     private array $m_body;
 
 

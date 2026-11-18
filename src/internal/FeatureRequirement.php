@@ -19,6 +19,7 @@ final readonly class FeatureRequirement
     private string $m_description;
     private string $m_nftablesVersion;
     private string $m_kernelVersion;
+    /** @var Closure(array<string, mixed>): bool */
     private Closure $m_isUsedBy;
 
     private NftablesTargetCollection $m_alsoSupportedBy;
@@ -33,7 +34,8 @@ final readonly class FeatureRequirement
      *
      * @param string $kernelVersion - the oldest kernel that handles it, or "" if any supported one does.
      *
-     * @param Closure $isUsedBy - given a definition's JSON (as an array), returns true if it uses the feature.
+     * @param Closure(array<string, mixed>): bool $isUsedBy - given a definition's JSON (as an array), returns true if
+     * it uses the feature.
      *
      * @param NftablesTarget ...$alsoSupportedBy - operating system targets that have the feature although their nft
      * or kernel is older, because their distribution backported it. They're never refused it.
@@ -57,7 +59,7 @@ final readonly class FeatureRequirement
     /**
      * Check whether a definition uses this feature.
      *
-     * @param array $definition - a table, chain, set or rule's toArray().
+     * @param array<string, mixed> $definition - a table, chain, set or rule's toArray().
      *
      * @return bool
      */

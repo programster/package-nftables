@@ -21,9 +21,15 @@ final readonly class DupStatement implements Statement, ChainRestricted
 {
     // The family of table it can go in.
     private Family $m_family;
+    /** @var array<string, mixed> - the statement's body, in the form nftables expects. */
     private array $m_body;
 
 
+    /**
+     * Create a dup statement. Use createToAddress() or createToDevice().
+     * @param Family $family - the family of the table it can be used in.
+     * @param array<string, mixed> $body - the statement's body, in the form nftables expects.
+     */
     private function __construct(Family $family, array $body)
     {
         $this->m_family = $family;

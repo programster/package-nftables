@@ -11,8 +11,7 @@ interface Statement
 {
     /**
      * Get the statement in the form nftables expects in a rule's "expr" list.
-     *
-     * @return array
+     * @return array<string, mixed> - a JSON object, keyed by the statement's name, e.g. "counter".
      */
     public function toArray() : array;
 }

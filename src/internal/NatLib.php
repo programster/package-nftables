@@ -33,7 +33,7 @@ final class NatLib
      *
      * @param NatFlag ...$flags - the statement's flags.
      *
-     * @return array - the body, which is empty if there's nothing in it.
+     * @return array<string, mixed> - the body, which is empty if there's nothing in it.
      *
      * @throws InvalidAddressException - if the address isn't an IP address.
      * @throws BadArgumentException - if the port isn't between 1 and 65535.
@@ -74,7 +74,7 @@ final class NatLib
      *
      * @param NatFlag ...$flags - the statement's flags.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function createMapBody(
         IpVersion $ipVersion,
@@ -100,7 +100,7 @@ final class NatLib
      *
      * @param NatFlag ...$flags - the flags.
      *
-     * @return array - empty if there are none.
+     * @return array<string, mixed> - empty if there are none.
      */
     private static function createFlags(NatFlag ...$flags) : array
     {

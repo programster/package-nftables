@@ -42,7 +42,7 @@ abstract readonly class Chain implements TableItem
     /**
      * Get the parts of the chain's definition that every chain has.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     protected function getIdentifier() : array
     {

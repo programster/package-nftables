@@ -23,9 +23,14 @@ final readonly class IpsecExpression implements Expression
     // The most security associations a packet can go through, as nft counts them from 0.
     private const MAX_SPNUM = 255;
 
+    /** @var array<string, mixed> - the ipsec expression, in the form nftables expects. */
     private array $m_value;
 
 
+    /**
+     * Create the ipsec expression.
+     * @param array<string, mixed> $value - the ipsec expression, in the form nftables expects.
+     */
     private function __construct(array $value)
     {
         $this->m_value = $value;
@@ -98,7 +103,7 @@ final readonly class IpsecExpression implements Expression
      *
      * @param int $associationNumber - the association, from 0.
      *
-     * @return array - empty for the first, which is nft's default.
+     * @return array<string, mixed> - empty for the first, which is nft's default.
      *
      * @throws BadArgumentException - if it isn't from 0 to 255.
      */

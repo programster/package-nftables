@@ -27,9 +27,15 @@ use Programster\Nftables\Internal\ChainLib;
 final readonly class TproxyStatement implements Statement, ChainRestricted
 {
     private IpVersion $m_ipVersion;
+    /** @var array<string, mixed> - the statement's body, in the form nftables expects. */
     private array $m_body;
 
 
+    /**
+     * Create a tproxy statement.
+     * @param IpVersion $ipVersion - the IP version of the address it sends to.
+     * @param array<string, mixed> $body - the statement's body, in the form nftables expects.
+     */
     private function __construct(IpVersion $ipVersion, array $body)
     {
         $this->m_ipVersion = $ipVersion;

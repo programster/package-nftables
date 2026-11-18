@@ -43,9 +43,20 @@ final readonly class ConnectionStateSet implements Expression
     }
 
 
+    /**
+     * Get the states in the form nftables expects, as a list of their names.
+     * @return list<string> - e.g. ["established", "related"].
+     */
     public function toJsonValue() : array
     {
-        return $this->m_states->column("value");
+        $values = [];
+
+        foreach ($this->m_states as $state)
+        {
+            $values[] = $state->value;
+        }
+
+        return $values;
     }
 
 

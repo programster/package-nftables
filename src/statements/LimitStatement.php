@@ -61,6 +61,10 @@ final readonly class LimitStatement implements Statement
     }
 
 
+    /**
+     * Get the statement in the form nftables expects, which a NamedLimit's definition is also built from.
+     * @return array{limit: array<string, mixed>}
+     */
     public function toArray() : array
     {
         $limit = ["rate" => $this->m_rate, "per" => $this->m_period->value];

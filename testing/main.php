@@ -13,13 +13,19 @@ require_once(__DIR__ . '/../vendor/autoload.php');
 
 use Programster\Nftables\Testing\SmokeTestRunner;
 
+$testFiles = glob(__DIR__ . '/tests/*Test.php');
+
+if ($testFiles === false)
+{
+    echo "Couldn't list the test files in " . __DIR__ . "/tests.\n";
+    exit(1);
+}
+
+sort($testFiles);
 $only = (string)getenv("NFTABLES_TEST_ONLY");
 $smoke = new SmokeTestRunner($only);
 $dir = sys_get_temp_dir() . "/nftables-smoke-" . bin2hex(random_bytes(8));
 mkdir($dir, 0700);
-
-$testFiles = glob(__DIR__ . '/tests/*Test.php');
-sort($testFiles);
 
 foreach ($testFiles as $testFile)
 {
@@ -27,12 +33,23 @@ foreach ($testFiles as $testFile)
 }
 
 // The tests only write files directly into $dir.
-foreach (glob("{$dir}/*") as $file)
-{
-    unlink($file);
-}
+$leftoverFiles = glob("{$dir}/*");
 
-rmdir($dir);
+if ($leftoverFiles === false)
+{
+    echo "Couldn't list the files in {$dir}, so it hasn't been deleted.\n";
+}
+else
+{
+    foreach ($leftoverFiles as $file)
+    {
+        unlink($file);
+    }
+
+    rmdir($dir);
+}
+// Accessors have no docblock, so this says what they hold.
+/** @var string[] $failures */
 $failures = $smoke->getFailures();
 
 // Otherwise a name that matches nothing would pass without checking anything.
@@ -55,7 +72,10 @@ foreach ($failures as $failure)
 }
 
 // So that a run where something wasn't available doesn't look like it checked everything.
-foreach ($smoke->getSkipped() as $skipped)
+/** @var string[] $skippedTests */
+$skippedTests = $smoke->getSkipped();
+
+foreach ($skippedTests as $skipped)
 {
     echo "  SKIPPED {$skipped}\n";
 }

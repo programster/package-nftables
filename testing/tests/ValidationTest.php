@@ -101,6 +101,7 @@ use Programster\Nftables\Statements\TproxyStatement;
 use Programster\Nftables\Tables\Flowtable;
 use Programster\Nftables\Tables\Table;
 use Programster\Nftables\Testing\Fixtures;
+use Programster\Nftables\Testing\JsonLib;
 use Programster\Nftables\Testing\SmokeTestRunner;
 
 /** @var SmokeTestRunner $smoke */
@@ -1314,10 +1315,14 @@ $testForwardDestination = function () use ($ipTable) : void {
     $addresses = ["sourceAddress" => "10.0.0.9", "destinationAddress" => "10.0.0.5"];
     $rule = RuleFactory::createForward($forward, "eth0", "eth1", ...$addresses);
     $matches = Fixtures::getRuleExpressions($rule);
-    SmokeTestRunner::assertSame("saddr", $matches[2]["match"]["left"]["payload"]["field"], "the 3rd match's field");
-    SmokeTestRunner::assertSame("10.0.0.9", $matches[2]["match"]["right"], "the source address");
-    SmokeTestRunner::assertSame("daddr", $matches[3]["match"]["left"]["payload"]["field"], "the 4th match's field");
-    SmokeTestRunner::assertSame("10.0.0.5", $matches[3]["match"]["right"], "the destination address");
+    $sourceField = JsonLib::getValue($matches[2], "match", "left", "payload", "field");
+    $destinationField = JsonLib::getValue($matches[3], "match", "left", "payload", "field");
+    SmokeTestRunner::assertSame("saddr", $sourceField, "the 3rd match's field");
+    $sourceAddress = JsonLib::getValue($matches[2], "match", "right");
+    $destinationAddress = JsonLib::getValue($matches[3], "match", "right");
+    SmokeTestRunner::assertSame("10.0.0.9", $sourceAddress, "the source address");
+    SmokeTestRunner::assertSame("daddr", $destinationField, "the 4th match's field");
+    SmokeTestRunner::assertSame("10.0.0.5", $destinationAddress, "the destination address");
 };
 
 $smoke->run("Bugs: createForward() matches the destination address, not the source", $testForwardDestination);
@@ -1335,7 +1340,8 @@ $testDuplicatesGiveLists = function () : void {
     // array_unique() used to leave gaps in the keys, which json_encode() turned into an object.
     $ports = MatchFactory::createDestinationPorts(Protocol::TCP, new PortSet(22, 22, 80))->toArray();
     $states = new ConnectionStateSet(ConnectionState::NEW, ConnectionState::NEW, ConnectionState::ESTABLISHED);
-    SmokeTestRunner::assertSame('{"set":[22,80]}', json_encode($ports["match"]["right"]), "the ports' JSON");
+    $portsJson = json_encode(JsonLib::getValue($ports, "match", "right"));
+    SmokeTestRunner::assertSame('{"set":[22,80]}', $portsJson, "the ports' JSON");
     SmokeTestRunner::assertSame('["new","established"]', json_encode($states->toJsonValue()), "the states' JSON");
 };
 
@@ -1344,7 +1350,7 @@ $smoke->run("Bugs: duplicate ports and states give JSON lists, not objects", $te
 $testIpv6Matches = function () : void {
     // Address matches used to always use the ip (IPv4) header, which nft rejects in an ip6 table.
     $match = MatchFactory::createSourceAddress("2001:db8::1")->toArray();
-    SmokeTestRunner::assertSame("ip6", $match["match"]["left"]["payload"]["protocol"], "the header");
+    SmokeTestRunner::assertSame("ip6", JsonLib::getValue($match, "match", "left", "payload", "protocol"), "the header");
     SmokeTestRunner::assertSame(IpVersion::IPV6, NetworkLib::getIpVersion("fd00::/8"), "the version of fd00::/8");
     SmokeTestRunner::assertSame(IpVersion::IPV4, NetworkLib::getIpVersion("10.0.0.0/8"), "the version of 10.0.0.0/8");
 };
@@ -1364,9 +1370,10 @@ $smoke->run("Bugs: network CIDRs are told apart from host CIDRs", $testNetworkCi
 $testPriorityIsAnInteger = function () use ($ipTable) : void {
     // nft silently ignores a priority given as a name, and creates a chain with no hook that sees no packets.
     $chain = new BaseChain("c", $ipTable, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT, Policy::ACCEPT);
-    SmokeTestRunner::assertSame(-100, $chain->toArray()["chain"]["prio"], "the dstnat priority");
+    SmokeTestRunner::assertSame(-100, JsonLib::getValue($chain->toArray(), "chain", "prio"), "the dstnat priority");
     $bridgeChain = Fixtures::createChain("c", new Table("b", Family::BRIDGE), Policy::ACCEPT);
-    SmokeTestRunner::assertSame(-200, $bridgeChain->toArray()["chain"]["prio"], "the bridge filter priority");
+    $bridgePriority = JsonLib::getValue($bridgeChain->toArray(), "chain", "prio");
+    SmokeTestRunner::assertSame(-200, $bridgePriority, "the bridge filter priority");
 };
 
 $smoke->run("Bugs: named priorities are sent to nft as integers", $testPriorityIsAnInteger);

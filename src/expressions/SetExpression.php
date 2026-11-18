@@ -13,6 +13,7 @@ use Programster\Nftables\Internal\ExpressionLib;
  */
 final readonly class SetExpression implements Expression
 {
+    /** @var list<array<mixed>|string|int|bool> - the elements, in the form nftables expects. */
     private array $m_elements;
 
 

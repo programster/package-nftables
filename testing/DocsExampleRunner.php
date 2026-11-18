@@ -203,14 +203,26 @@ final readonly class DocsExampleRunner
      * Get the full name of every class, interface and enum in the package.
      *
      * @return string[]
+     *
+     * @throws RuntimeException - if the package's files can't be listed, or one has no namespace.
      */
     private function findPackageClasses() : array
     {
         $classes = [];
+        $files = glob($this->m_repoDir . "/src/{,*/}*.php", GLOB_BRACE);
 
-        foreach (glob($this->m_repoDir . "/src/{,*/}*.php", GLOB_BRACE) as $file)
+        if ($files === false)
         {
-            preg_match('/^namespace ([^;]+);/m', (string)file_get_contents($file), $namespace);
+            throw new RuntimeException("Couldn't list the files in {$this->m_repoDir}/src.");
+        }
+
+        foreach ($files as $file)
+        {
+            if (preg_match('/^namespace ([^;]+);/m', (string)file_get_contents($file), $namespace) !== 1)
+            {
+                throw new RuntimeException("{$file} has no namespace.");
+            }
+
             $classes[] = $namespace[1] . "\\" . basename($file, ".php");
         }
 

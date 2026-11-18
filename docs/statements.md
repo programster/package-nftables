@@ -451,13 +451,14 @@ Ethernet header set for that hop, as routing would. Using one in any other table
 ```php
 $mirror = new BaseChain("mirror", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER, Policy::ACCEPT);
 
-$rules = new RuleCollection(Rule::create($mirror, DupStatement::createToAddress("10.0.0.9")));
-$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
-
 $edge = new Table("edge", Family::NETDEV);
 $ingress = new BaseChain("ingress", $edge, ChainType::FILTER, ChainHook::INGRESS, Priority::FILTER, Policy::ACCEPT, "eth0");
 
-$rules = new RuleCollection(Rule::create($ingress, FwdStatement::createToDevice("eth1")));
+$rules = new RuleCollection(
+    Rule::create($mirror, DupStatement::createToAddress("10.0.0.9")),
+    Rule::create($ingress, FwdStatement::createToDevice("eth1")),
+);
+
 $ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 

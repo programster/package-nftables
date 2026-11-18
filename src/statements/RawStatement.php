@@ -11,13 +11,14 @@ namespace Programster\Nftables\Statements;
  */
 final readonly class RawStatement implements Statement
 {
+    /** @var array<string, mixed> */
     private array $m_statement;
 
 
     /**
      * Create a raw statement.
      *
-     * @param array $statement - the statement, exactly as nftables' JSON expects it, e.g.
+     * @param array<string, mixed> $statement - the statement, exactly as nftables' JSON expects it, e.g.
      * ["quota" => ["val" => 25, "val_unit" => "mbytes"]].
      */
     public function __construct(array $statement)

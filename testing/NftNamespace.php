@@ -91,7 +91,7 @@ final readonly class NftNamespace
         $listings = "{$nft} list ruleset\necho '{$separator}'\n{$nft} --json list ruleset";
         $script = "{$devices}\n{$this->load($file)}\n{$listings}";
         [$listing, $json] = explode($separator, self::runCommand(["unshare", "-rn", "bash", "-ec", $script]));
-        $listedItems = json_decode($json, true)["nftables"];
+        $listedItems = JsonLib::getObjectList(JsonLib::decode($json), "nftables");
         self::assertNothingDropped($ruleset->toArray()["nftables"], $listedItems, $listing);
         return array_map("trim", explode("\n", trim($listing)));
     }
@@ -166,18 +166,21 @@ final readonly class NftNamespace
     {
         $commands[] = escapeshellarg($this->m_nft) . " --json list ruleset";
         $output = self::runCommand(["unshare", "-rn", "bash", "-ec", implode("\n", $commands)]);
-        $items = json_decode($output, true, 512, JSON_THROW_ON_ERROR)["nftables"];
+        $items = JsonLib::getObjectList(JsonLib::decode($output), "nftables");
         $tables = [];
 
         foreach ($items as $item)
         {
             if (isset($item["table"]))
             {
-                $tables["{$item["table"]["family"]} {$item["table"]["name"]}"] = [];
+                $family = JsonLib::getString($item, "table", "family");
+                $tables["{$family} " . JsonLib::getString($item, "table", "name")] = [];
             }
             elseif (isset($item["rule"]))
             {
-                $tables["{$item["rule"]["family"]} {$item["rule"]["table"]}"][] = $item["rule"]["comment"] ?? "";
+                $where = JsonLib::getString($item, "rule", "family") . " " . JsonLib::getString($item, "rule", "table");
+                $hasComment = JsonLib::hasValue($item, "rule", "comment");
+                $tables[$where][] = $hasComment ? JsonLib::getString($item, "rule", "comment") : "";
             }
         }
 
@@ -192,9 +195,9 @@ final readonly class NftNamespace
      * kind of statement, including the statements in a set update. Matches aren't compared, as nft leaves out ones that
      * a later statement implies (e.g. meta l4proto tcp before reject with tcp reset).
      *
-     * @param array $sent - the items in the ruleset that was loaded.
+     * @param list<array<string, mixed>> $sent - the items in the ruleset that was loaded.
      *
-     * @param array $listed - the items in nft's JSON listing of what it loaded.
+     * @param list<array<string, mixed>> $listed - the items in nft's JSON listing of what it loaded.
      *
      * @param string $textListing - nft's text listing of what it loaded, for the chains' devices, which nft 1.0.6 to
      * 1.0.9 leave out of the JSON listing.
@@ -206,11 +209,13 @@ final readonly class NftNamespace
     private static function assertNothingDropped(array $sent, array $listed, string $textListing) : void
     {
         $textDevices = [];
-        preg_match_all('/device "([^"]+)"|devices = \{([^}]*)\}/', $textListing, $deviceMatches, PREG_SET_ORDER);
+        $devicePattern = '/device "([^"]+)"|devices = \{([^}]*)\}/';
+        preg_match_all($devicePattern, $textListing, $deviceMatches, PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL);
 
         foreach ($deviceMatches as $match)
         {
-            $names = ($match[1] !== "") ? [$match[1]] : explode(",", $match[2]);
+            // Each match is one of the two forms, so when it isn't a single device, it's a list of them.
+            $names = ($match[1] !== null) ? [$match[1]] : explode(",", (string)$match[2]);
             array_push($textDevices, ...array_map("trim", str_replace('"', "", $names)));
         }
 
@@ -219,18 +224,18 @@ final readonly class NftNamespace
 
         foreach ($listed as $item)
         {
-            $kind = array_key_first($item);
+            $kind = self::getKind($item);
 
             if ($kind === "rule")
             {
-                foreach ($item["rule"]["expr"] as $statement)
+                foreach (JsonLib::getObjectList($item, "rule", "expr") as $statement)
                 {
                     $listedStatements[self::describeStatement($statement)] = true;
                 }
             }
             elseif ($kind !== "metainfo")
             {
-                $listedItems[self::describeItem($item)] = $item[$kind];
+                $listedItems[self::describeItem($item)] = JsonLib::getObject($item, $kind);
             }
         }
 
@@ -238,11 +243,11 @@ final readonly class NftNamespace
 
         foreach ($sent as $item)
         {
-            $kind = array_key_first($item);
+            $kind = self::getKind($item);
 
             if ($kind === "rule")
             {
-                foreach ($item["rule"]["expr"] as $statement)
+                foreach (JsonLib::getObjectList($item, "rule", "expr") as $statement)
                 {
                     $description = self::describeStatement($statement);
                     $isKept = ($description === "match" || isset($listedStatements[$description]));
@@ -253,7 +258,8 @@ final readonly class NftNamespace
             {
                 $description = self::describeItem($item);
                 $listedItem = $listedItems[$description] ?? null;
-                $dropped[] = self::findDroppedPart($description, $item[$kind], $listedItem, $textDevices);
+                $sentItem = JsonLib::getObject($item, $kind);
+                $dropped[] = self::findDroppedPart($description, $sentItem, $listedItem, $textDevices);
             }
         }
 
@@ -271,9 +277,9 @@ final readonly class NftNamespace
      *
      * @param string $description - what the item is, e.g. "chain inet t input".
      *
-     * @param array $sent - the item's definition, as it was loaded.
+     * @param array<string, mixed> $sent - the item's definition, as it was loaded.
      *
-     * @param array|null $listed - its definition in nft's listing, or null if it isn't listed.
+     * @param array<string, mixed>|null $listed - its definition in nft's listing, or null if it isn't listed.
      *
      * @param string[] $textDevices - every device in nft's text listing, for a chain whose device the JSON leaves out.
      *
@@ -293,10 +299,10 @@ final readonly class NftNamespace
         // A chain's or flowtable's devices. nft before 1.0.6 sends the kernel garbage for a chain's device, which some
         // kernels reject and others accept, so the device listed has to be the one that was sent. nft 1.0.6 to 1.0.9
         // leave a chain's device out of the JSON listing, so then it has to be in the text listing.
-        $sentDevices = (array)($sent["dev"] ?? []);
+        $sentDevices = self::getDevices($sent);
 
         $listedDevices = isset($listed["dev"])
-            ? (array)$listed["dev"]
+            ? self::getDevices($listed)
             : array_values(array_intersect($sentDevices, $textDevices));
 
         sort($sentDevices);
@@ -316,31 +322,73 @@ final readonly class NftNamespace
     /**
      * Describe a table, chain, set, map, flowtable or named object, as unique to it, e.g. "chain inet t input".
      *
-     * @param array $item - the item's definition, e.g. ["chain" => [...]].
+     * @param array<string, mixed> $item - the item's definition, e.g. ["chain" => [...]].
      *
      * @return string
      */
     private static function describeItem(array $item) : string
     {
-        $kind = array_key_first($item);
-        $definition = $item[$kind];
-        $table = ($kind === "table") ? "" : " {$definition["table"]}";
-        return "{$kind} {$definition["family"]}{$table} {$definition["name"]}";
+        $kind = self::getKind($item);
+        $definition = JsonLib::getObject($item, $kind);
+        $table = ($kind === "table") ? "" : " " . JsonLib::getString($definition, "table");
+        $family = JsonLib::getString($definition, "family");
+        return "{$kind} {$family}{$table} " . JsonLib::getString($definition, "name");
     }
 
 
     /**
      * Describe a statement, by its kind, and whether a set update has statements, e.g. "set (with statements)".
      *
-     * @param array $statement - the statement.
+     * @param array<string, mixed> $statement - the statement.
      *
      * @return string
+     *
+     * @throws RuntimeException - if the statement is empty, so it has no kind.
      */
     private static function describeStatement(array $statement) : string
     {
-        $kind = array_key_first($statement);
-        $hasStatements = ($kind === "set" && isset($statement["set"]["stmt"]));
+        $kind = self::getKind($statement);
+        $hasStatements = ($kind === "set" && JsonLib::hasValue($statement, "set", "stmt"));
         return $hasStatements ? "set (with statements)" : $kind;
+    }
+
+
+    /**
+     * Get the kind of an item or statement in nftables' JSON, which is its only key, e.g. "chain" or "counter".
+     * @param array<string, mixed> $definition - the item or statement.
+     * @return string
+     * @throws RuntimeException - if it's empty, so it has no kind.
+     */
+    private static function getKind(array $definition) : string
+    {
+        $kind = array_key_first($definition);
+
+        if ($kind === null)
+        {
+            throw new RuntimeException("An item or statement can't be empty, as its key is its kind.");
+        }
+
+        return $kind;
+    }
+
+
+    /**
+     * Get a chain's or flowtable's devices, which nftables' JSON gives as a string for one, or a list for several.
+     * @param array<string, mixed> $definition - the chain or flowtable's definition.
+     * @return list<string> - empty if it has none.
+     * @throws RuntimeException - if its devices are neither a string nor a list of strings.
+     */
+    private static function getDevices(array $definition) : array
+    {
+        $devices = [];
+
+        if (isset($definition["dev"]))
+        {
+            $device = $definition["dev"];
+            $devices = is_string($device) ? [$device] : JsonLib::getStringList($definition, "dev");
+        }
+
+        return $devices;
     }
 
 
@@ -379,7 +427,7 @@ final readonly class NftNamespace
     /**
      * Run a command directly (not through a shell).
      *
-     * @param string[] $command - the program and its arguments.
+     * @param list<string> $command - the program and its arguments.
      *
      * @return string - what it wrote to stdout.
      *

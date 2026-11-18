@@ -73,7 +73,8 @@ final class NetworkLib
             $address = Factory::parseAddressString(explode("/", $cidr)[0]);
 
             $result = (
-                   $address !== null
+                   $subnet !== null
+                && $address !== null
                 && $subnet->getStartAddress()->getComparableString() === $address->getComparableString()
             );
         }
@@ -95,9 +96,11 @@ final class NetworkLib
     {
         if (!self::isValidNetworkCidr($cidr))
         {
-            if (self::isValidCidr($cidr))
+            $subnet = Subnet::parseString($cidr);
+
+            if (self::isValidCidr($cidr) && $subnet !== null)
             {
-                $network = Subnet::parseString($cidr)->toString();
+                $network = $subnet->toString();
                 throw new InvalidAddressException("{$cidr} has host bits set. Did you mean the network {$network}?");
             }
             else

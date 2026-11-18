@@ -27,8 +27,7 @@ interface TableItem
 
     /**
      * Get the item in the form nftables expects.
-     *
-     * @return array
+     * @return array<string, mixed> - a JSON object, keyed by the item's kind, e.g. "chain".
      */
     public function toArray() : array;
 }

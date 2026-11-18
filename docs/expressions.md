@@ -68,12 +68,10 @@ key, so match `MetaKey::NFPROTO` first, as below. (nft treats that match as impl
 $ownMark = new BinaryOperationExpression(BinaryOperator::AND, new MetaExpression(MetaKey::MARK), 0xFF);
 $startedBy = new CtExpression(CtKey::SADDR, CtDirection::ORIGINAL, IpVersion::IPV4);
 
-$rules = new RuleCollection(Rule::create($input, new MatchStatement($ownMark, Operator::EQUALS, 1), Verdict::ACCEPT));
-$ruleset = new Ruleset($rules);
-
 $isIpv4 = new MatchStatement(new MetaExpression(MetaKey::NFPROTO), Operator::EQUALS, "ipv4");
 
 $rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($ownMark, Operator::EQUALS, 1), Verdict::ACCEPT),
     Rule::create($input, $isIpv4, new MatchStatement($startedBy, Operator::EQUALS, "10.0.0.1"), Verdict::ACCEPT),
 );
 

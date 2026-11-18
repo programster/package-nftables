@@ -146,7 +146,7 @@ final class Fixtures
         {
             if (isset($item["rule"]))
             {
-                $comments[] = $item["rule"]["comment"];
+                $comments[] = JsonLib::getString($item, "rule", "comment");
             }
         }
 
@@ -159,10 +159,10 @@ final class Fixtures
      *
      * @param Rule $rule - the rule.
      *
-     * @return array
+     * @return list<array<string, mixed>>
      */
     public static function getRuleExpressions(Rule $rule) : array
     {
-        return $rule->toArray()["rule"]["expr"];
+        return JsonLib::getObjectList($rule->toArray(), "rule", "expr");
     }
 }

@@ -5,7 +5,7 @@ includes:
     - vendor/programster/collections/extension.neon
 
 parameters:
-    level: 5
+    level: 10
     phpVersion:
         min: 80200
         max: 80599
@@ -13,6 +13,20 @@ parameters:
         - src
         - testing
     ignoreErrors:
+        # Accessors are one line, with no docblock, so these can't say what their arrays hold. Their properties' @var
+        # does instead.
+        -
+            identifier: missingType.iterableValue
+            path: src/sets/PortSet.php
+            count: 1
+        -
+            identifier: missingType.iterableValue
+            path: src/tables/Flowtable.php
+            count: 1
+        -
+            identifier: missingType.iterableValue
+            path: testing/SmokeTestRunner.php
+            count: 2
         # These tests deliberately pass the wrong type, to check that PHP rejects it when the code runs.
         -
             identifier: argument.type

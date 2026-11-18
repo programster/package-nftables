@@ -116,7 +116,7 @@ final readonly class Rule
     /**
      * Get the rule in the form nftables expects.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray() : array
     {
