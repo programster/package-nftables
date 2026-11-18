@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\SetFlag;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of set flags. Anything that isn't a SetFlag is rejected as it's added.
+ * A list of set flags. It can't be changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<SetFlag>
+ * @extends AbstractReadonlyCollection<SetFlag>
  */
-final class SetFlagCollection extends AbstractCollection
+final readonly class SetFlagCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of set flags.
+     * @param SetFlag ...$flags - the set flags. There can be none.
+     */
+    public function __construct(SetFlag ...$flags)
     {
-        return SetFlag::class;
+        parent::__construct(...$flags);
     }
 }

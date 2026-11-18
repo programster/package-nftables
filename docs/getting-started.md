@@ -4,6 +4,7 @@
 - [A complete example](#a-complete-example)
 - [Loading it](#loading-it)
 - [How it fits together](#how-it-fits-together)
+- [Namespaces](#namespaces)
 
 ## Installing
 Version 1.0 is in alpha, so ask for it explicitly. Composer won't install an alpha otherwise:
@@ -21,17 +22,18 @@ office network, lets the LAN out to the internet, and forwards port 443 to a web
 [examples](examples.md) have more, including one with IPv6:
 
 ```php
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ConnectionStateSet;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\ConnectionState;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\Policy;
 use Programster\Nftables\Enums\Priority;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Helpers\RuleFactory;
 use Programster\Nftables\Ruleset;
-use Programster\Nftables\Table;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Tables\Table;
 
 $table = new Table("gateway", Family::IP);
 $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
@@ -40,9 +42,7 @@ $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PRE
 $postrouting = new BaseChain("postrouting", $table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
 $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
 
-$ruleset = new Ruleset();
-
-$ruleset->addRule(
+$rules = new RuleCollection(
     RuleFactory::createAcceptInterface($input, "lo", comment: "loopback"),
     RuleFactory::createAcceptInterface($input, "eth1", comment: "the LAN"),
     RuleFactory::createAcceptInterface($input, "eth0", $replies, "replies to this machine's own connections"),
@@ -57,6 +57,8 @@ $ruleset->addRule(
     RuleFactory::createPortForward($prerouting, "eth0", 443, "10.0.0.10"),
     RuleFactory::createForward($forward, "eth0", "eth1", destinationPorts: 443, destinationAddress: "10.0.0.10"),
 );
+
+$ruleset = new Ruleset($rules);
 
 file_put_contents("/etc/gateway/ruleset.json", $ruleset->toJson());
 ```
@@ -120,3 +122,24 @@ the same transaction (see [Rulesets](rulesets.md#reset-modes)).
   else the rules need. Given the [target](targets.md) it will be loaded on, e.g.
   `new Ruleset(NftablesTarget::DEBIAN_12)`, it refuses anything that target's nft can't load. Without one, it assumes
   the oldest supported.
+
+## Namespaces
+Every class is in `Programster\Nftables`, or one of the namespaces under it:
+
+| Namespace | Classes |
+|---|---|
+| `Programster\Nftables` | `Ruleset` |
+| `Tables` | `Table`, `EmptyTable`, `Flowtable`, and the `TableItem` and `ReferencesTableItems` interfaces |
+| `Chains` | `BaseChain`, `RegularChain`, `EmptyChain`, and the abstract `Chain` they extend (all but `EmptyChain`) |
+| `Rules` | `Rule`, and `PortForward` (for `RuleFactory::createMapPortForward()`) |
+| `Helpers` | `RuleFactory`, `MatchFactory`, and `NetworkLib` (for checking addresses and CIDRs) |
+| `Sets` | `NamedSet`, `ConnectionStateSet`, `PortSet` and `PortRange` |
+| `Maps` | `NamedMap`, `NamedVerdictMap`, `AnonymousMap`, `AnonymousVerdictMap`, `MapElement` and `VerdictMapElement` |
+| `Statements` | Every [statement](statements.md), and the `Statement` interface |
+| `Expressions` | Every [expression](expressions.md), and the `Expression` interface |
+| `Objects` | The [named objects](objects.md) |
+| `Enums` | Every enum, e.g. `Family`, `ChainHook` and `Verdict` |
+| `Collections` | The typed collections, e.g. `PortForwardCollection`, which can't be changed once they're created |
+| `Exceptions` | The [exceptions](errors.md) |
+
+`Internal` holds the package's own helpers, which aren't part of its API and can change in any release.

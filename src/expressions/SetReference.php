@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Collections\TableItemCollection;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\ReferencesTableItems;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * A reference to a named set, for matching against it, e.g. ip saddr @blocklist. Get one from NamedSet::getReference().
@@ -31,7 +31,7 @@ final readonly class SetReference implements Expression, ReferencesTableItems
 
     public function getReferencedItems() : TableItemCollection
     {
-        return new TableItemCollection([$this->m_set]);
+        return new TableItemCollection($this->m_set);
     }
 
 

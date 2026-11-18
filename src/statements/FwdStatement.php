@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
-use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Helpers\NetworkLib;
 
 /**
  * Sends the packet out of another network device straight away, skipping the rest of the network stack (fwd to

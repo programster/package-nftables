@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\SynproxyFlag;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of the TCP options a synproxy offers. Anything that isn't a SynproxyFlag is rejected as it's added.
+ * A list of the TCP options a synproxy offers. It can't be changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<SynproxyFlag>
+ * @extends AbstractReadonlyCollection<SynproxyFlag>
  */
-final class SynproxyFlagCollection extends AbstractCollection
+final readonly class SynproxyFlagCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of the TCP options a synproxy offers.
+     * @param SynproxyFlag ...$flags - the TCP options. There can be none.
+     */
+    public function __construct(SynproxyFlag ...$flags)
     {
-        return SynproxyFlag::class;
+        parent::__construct(...$flags);
     }
 }

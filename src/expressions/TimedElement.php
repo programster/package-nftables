@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Internal\ExpressionLib;
 
 /**
  * A set element with a timeout of its own, in place of the set's, e.g. to block one address for an hour in a set whose

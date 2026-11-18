@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\ConnectionState;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of connection tracking states. Anything that isn't a ConnectionState is rejected as it's added.
+ * A list of connection tracking states. It can't be changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<ConnectionState>
+ * @extends AbstractReadonlyCollection<ConnectionState>
  */
-final class ConnectionStateCollection extends AbstractCollection
+final readonly class ConnectionStateCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of connection tracking states.
+     * @param ConnectionState ...$states - the connection tracking states. There can be none.
+     */
+    public function __construct(ConnectionState ...$states)
     {
-        return ConnectionState::class;
+        parent::__construct(...$states);
     }
 }

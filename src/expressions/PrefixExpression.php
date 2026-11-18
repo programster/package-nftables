@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Exceptions\InvalidAddressException;
-use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Helpers\NetworkLib;
 
 /**
  * A network, given as a CIDR prefix, e.g. 10.0.0.0/8.

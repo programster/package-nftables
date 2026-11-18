@@ -23,8 +23,7 @@
 | **Needs** | nft 1.0.6 (e.g. Debian 12), as older nft can't read a flowtable's devices from JSON |
 | **Classes** | `Flowtable`, and `RuleFactory::createFlowOffload()` (or a `FlowOffloadStatement`) |
 
-The examples leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`,
-`Statements`, `Expressions` and `Exceptions` namespaces.
+The examples leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ## How a forwarded packet normally travels
 A packet that a gateway forwards, e.g. from the internet (on `eth0`) to a machine behind it (on `eth1`), passes
@@ -79,10 +78,13 @@ $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWAR
 $fastpath = new Flowtable("fastpath", $table, Priority::FILTER, "eth0", "eth1");
 $established = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
 
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_12);
-$ruleset->addRule(RuleFactory::createFlowOffload($forward, $fastpath));
-$ruleset->addRule(RuleFactory::createForward($forward, "eth0", "eth1", $established));
-$ruleset->addRule(RuleFactory::createForward($forward, "eth1", "eth0"));
+$rules = new RuleCollection(
+    RuleFactory::createFlowOffload($forward, $fastpath),
+    RuleFactory::createForward($forward, "eth0", "eth1", $established),
+    RuleFactory::createForward($forward, "eth1", "eth0"),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft

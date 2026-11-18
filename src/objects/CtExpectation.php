@@ -8,14 +8,16 @@ use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\NetworkLib;
-use Programster\Nftables\Table;
+use Programster\Nftables\Helpers\NetworkLib;
+use Programster\Nftables\Internal\IpFamilyLib;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A conntrack expectation: once a rule gives a connection one (ct expectation set "rtp"), conntrack expects a
  * connection back the other way, from the machine that was contacted to the one that contacted it, to a port, within a
- * time, and treats that connection as related to the first. It's a simple stand-in for a CtHelper, for a protocol that always opens its second connection on a known
- * port, so the second connection can be accepted with "ct state related" instead of opening the port to everyone.
+ * time, and treats that connection as related to the first. It's a simple stand-in for a CtHelper, for a protocol
+ * that always opens its second connection on a known port, so the second connection can be accepted with "ct state
+ * related" instead of opening the port to everyone.
  *
  * Needs nft 1.0.9, as older nft can't read one from JSON, and kernel 5.3.
  */

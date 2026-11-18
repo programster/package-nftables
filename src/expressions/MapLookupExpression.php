@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Expressions;
 
-use Programster\Nftables\AnonymousMap;
 use Programster\Nftables\Collections\TableItemCollection;
-use Programster\Nftables\NamedMap;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Maps\AnonymousMap;
+use Programster\Nftables\Maps\NamedMap;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Looks a key up in a map, and stands for the value it maps to, e.g. tcp dport map @forwards, as the address of a
@@ -48,7 +48,7 @@ final readonly class MapLookupExpression implements Expression, ReferencesTableI
 
         if ($this->m_map instanceof NamedMap)
         {
-            $items->add($this->m_map);
+            $items = $items->merge(new TableItemCollection($this->m_map));
         }
 
         return $items;

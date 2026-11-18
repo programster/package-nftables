@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\FibFlag;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of what a fib lookup uses. Anything that isn't a FibFlag is rejected as it's added.
+ * A list of what a fib lookup uses. It can't be changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<FibFlag>
+ * @extends AbstractReadonlyCollection<FibFlag>
  */
-final class FibFlagCollection extends AbstractCollection
+final readonly class FibFlagCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of what a fib lookup uses.
+     * @param FibFlag ...$flags - what the fib lookup uses. There can be none.
+     */
+    public function __construct(FibFlag ...$flags)
     {
-        return FibFlag::class;
+        parent::__construct(...$flags);
     }
 }

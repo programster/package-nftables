@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Statements\Statement;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of statements, e.g. a rule's, in the order they're applied. Anything that isn't a Statement is rejected as
- * it's added.
+ * A list of statements, e.g. a rule's, in the order they're applied. It can't be changed once it's created, so it can
+ * be shared freely.
  *
- * @extends AbstractCollection<Statement>
+ * @extends AbstractReadonlyCollection<Statement>
  */
-final class StatementCollection extends AbstractCollection
+final readonly class StatementCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of statements, in the order they're applied.
+     * @param Statement ...$statements - the statements, in the order they're applied. There can be none.
+     */
+    public function __construct(Statement ...$statements)
     {
-        return Statement::class;
+        parent::__construct(...$statements);
     }
 }

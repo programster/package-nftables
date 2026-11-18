@@ -7,7 +7,7 @@ namespace Programster\Nftables\Objects;
 use Programster\Nftables\Enums\QuotaMatch;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Statements\QuotaStatement;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A named quota, which any number of rules can share (quota name "guest1"), e.g. so a guest's traffic in both

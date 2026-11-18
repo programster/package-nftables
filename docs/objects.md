@@ -10,20 +10,18 @@
 
 A named object is something with state, e.g. a counter, that lives in a table alongside its chains, so any number of
 rules can share it, and `nft list` can show (or reset) its state. They're all in the `Programster\Nftables\Objects`
-namespace. The examples leave out `use` statements. Every other class is in `Programster\Nftables`, or one of its
-`Enums`, `Statements`, `Expressions` and `Exceptions` namespaces.
+namespace. The examples leave out `use` statements: see [namespaces](getting-started.md#namespaces) for the rest.
 
 ```php
 $table = new Table("gateway", Family::INET);
 $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::ACCEPT);
 $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::ACCEPT);
-$ruleset = new Ruleset();
 ```
 
 ## Using a named object
-Each object's `createStatement()` gives the statement that uses it for a packet, e.g. counts it, for a counter. Adding
-a rule with one adds the object to the ruleset too, and `Ruleset::addObject()` adds one that no rule uses. Each kind
-of object has names of its own, so a counter and a quota can both be called `guest1`.
+Each object's `createStatement()` gives the statement that uses it for a packet, e.g. counts it, for a counter. Adding a
+rule with one adds the object to the ruleset too. An object no rule uses would do nothing, so it can't be passed in on
+its own. Each kind of object has names of its own, so a counter and a quota can both be called `guest1`.
 
 Reloading the ruleset recreates its objects, so their state (e.g. a counter's count) starts again.
 
@@ -38,8 +36,12 @@ $guest1Quota = new NamedQuota("guest1", $table, new QuotaStatement(10240, QuotaU
 $fromGuest1 = MatchFactory::createSourceAddress("10.0.0.2");
 $toGuest1 = MatchFactory::createDestinationAddress("10.0.0.2");
 
-$ruleset->addRule(Rule::create($forward, $fromGuest1, $guest1->createStatement(), $guest1Quota->createStatement(), Verdict::DROP));
-$ruleset->addRule(Rule::create($forward, $toGuest1, $guest1->createStatement(), $guest1Quota->createStatement(), Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($forward, $fromGuest1, $guest1->createStatement(), $guest1Quota->createStatement(), Verdict::DROP),
+    Rule::create($forward, $toGuest1, $guest1->createStatement(), $guest1Quota->createStatement(), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -73,7 +75,12 @@ helper, the kernel reads the connection, recognises the connections it opens as 
 $prerouting = new BaseChain("helpers", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER, Policy::ACCEPT);
 $ftp = new CtHelper("ftp", $table, CtHelperType::FTP);
 $toFtpServer = MatchFactory::createDestinationAddress("10.0.0.3");
-$ruleset->addRule(Rule::create($prerouting, $toFtpServer, MatchFactory::createDestinationPorts(Protocol::TCP, 21), $ftp->createStatement()));
+
+$rules = new RuleCollection(
+    Rule::create($prerouting, $toFtpServer, MatchFactory::createDestinationPorts(Protocol::TCP, 21), $ftp->createStatement()),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -102,8 +109,11 @@ number of seconds. E.g. to keep idle SSH connections for 2 hours, without changi
 $raw = new BaseChain("raw", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::RAW, Policy::ACCEPT);
 $longSsh = new CtTimeout("long_ssh", $table, new CtTimeoutPolicy(CtTimeoutState::TCP_ESTABLISHED, 7200));
 
-$ruleset = new Ruleset(NftablesTarget::UBUNTU_24_04);
-$ruleset->addRule(Rule::create($raw, MatchFactory::createDestinationPorts(Protocol::TCP, 22), $longSsh->createStatement()));
+$rules = new RuleCollection(
+    Rule::create($raw, MatchFactory::createDestinationPorts(Protocol::TCP, 22), $longSsh->createStatement()),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::UBUNTU_24_04);
 ```
 
 ```nft
@@ -135,7 +145,12 @@ port 5060, and replies by opening a connection back to port 5061:
 
 ```php
 $callback = new CtExpectation("callback", $table, IpVersion::IPV4, Protocol::TCP, 5061, 60, 4);
-$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 5060), $callback->createStatement()));
+
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 5060), $callback->createStatement()),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::UBUNTU_24_04);
 ```
 
 ```nft
@@ -160,8 +175,11 @@ RHEL 9), as older nft can't read one from JSON:
 $web = new NamedSynproxy("web", $table, new SynproxyStatement(1460, 7, SynproxyFlag::TIMESTAMP, SynproxyFlag::SACK_PERMITTED));
 $untracked = MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::INVALID, ConnectionState::UNTRACKED));
 
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_13);
-$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 443), $untracked, $web->createStatement()));
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 443), $untracked, $web->createStatement()),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_13);
 ```
 
 ```nft
@@ -180,7 +198,7 @@ SELinux) can decide which programs may send and receive them. Loading it fails u
 context, and using one in a rule needs nft 1.0.6 (e.g. Debian 12):
 
 ```php
-$secmarkRuleset = new Ruleset(NftablesTarget::DEBIAN_12);
 $sshPacket = new Secmark("ssh", $table, "system_u:object_r:ssh_server_packet_t:s0");
-$secmarkRuleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 22), $sshPacket->createStatement()));
+$sshRule = Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 22), $sshPacket->createStatement());
+$secmarkRuleset = new Ruleset(new RuleCollection($sshRule), NftablesTarget::DEBIAN_12);
 ```

@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\PortForward;
-use Ramsey\Collection\AbstractCollection;
+use Programster\Collections\AbstractReadonlyCollection;
+use Programster\Nftables\Rules\PortForward;
 
 /**
- * A list of port forwards, for RuleFactory::createMapPortForward(). Anything that isn't a PortForward is rejected as
- * it's added.
+ * A list of port forwards, for RuleFactory::createMapPortForward(). It can't be changed once it's created, so it can be
+ * shared freely.
  *
- * @extends AbstractCollection<PortForward>
+ * @extends AbstractReadonlyCollection<PortForward>
  */
-final class PortForwardCollection extends AbstractCollection
+final readonly class PortForwardCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of port forwards, for RuleFactory::createMapPortForward().
+     * @param PortForward ...$forwards - the port forwards. There can be none.
+     */
+    public function __construct(PortForward ...$forwards)
     {
-        return PortForward::class;
+        parent::__construct(...$forwards);
     }
 }

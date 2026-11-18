@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ChainLib;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Collections\SynproxyFlagCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\SynproxyFlag;
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Internal\ChainLib;
 
 /**
  * Answers new TCP connections on a server's behalf with SYN cookies, and only passes a connection on to the server once
@@ -70,7 +70,7 @@ final readonly class SynproxyStatement implements Statement, ChainRestricted
             $uniqueFlags[$flag->value] = $flag;
         }
 
-        $this->m_flags = new SynproxyFlagCollection(array_values($uniqueFlags));
+        $this->m_flags = new SynproxyFlagCollection(...array_values($uniqueFlags));
     }
 
 

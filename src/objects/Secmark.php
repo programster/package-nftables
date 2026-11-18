@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A security mark, which a rule gives packets (meta secmark set "ssh"), so the security module's policy (e.g.

@@ -6,7 +6,8 @@ namespace Programster\Nftables\Statements;
 
 use Programster\Nftables\Enums\NatFlag;
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\PortRange;
+use Programster\Nftables\Internal\NatLib;
+use Programster\Nftables\Sets\PortRange;
 
 /**
  * Sends the packet to this machine, optionally on a different port, e.g. to send port 80 to a local proxy on port 8080.

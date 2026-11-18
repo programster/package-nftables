@@ -26,8 +26,8 @@ the static IP address you manage the servers from, e.g. your office's.
 | Database | `10.0.0.12` | SSH from the trusted address (port 2212) |
 
 ```php
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ConnectionStateSet;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\ConnectionState;
@@ -35,9 +35,10 @@ use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\Policy;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Helpers\RuleFactory;
 use Programster\Nftables\Ruleset;
-use Programster\Nftables\Table;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Tables\Table;
 
 $loopback = "lo";
 $wan = "eth0";
@@ -54,9 +55,7 @@ $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PRE
 $postrouting = new BaseChain("postrouting", $table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
 $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
 
-$ruleset = new Ruleset();
-
-$ruleset->addRule(
+$rules = new RuleCollection(
     // The gateway itself: the LAN can reach it, and your trusted address can SSH to it.
     RuleFactory::createAcceptInterface($input, $loopback),
     RuleFactory::createAcceptInterface($input, $lan),
@@ -83,6 +82,8 @@ $ruleset->addRule(
     // Let the port forwarded connections through the forward chain.
     RuleFactory::createAcceptPortForwards($forward),
 );
+
+$ruleset = new Ruleset($rules);
 
 file_put_contents("/etc/gateway/ruleset.json", $ruleset->toJson());
 ```
@@ -178,8 +179,8 @@ Compared with the IPv4 gateway, this:
   usually a whole network, e.g. a /48 or /56, whose machines' addresses change over time.
 
 ```php
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ConnectionStateSet;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\ConnectionState;
@@ -188,10 +189,11 @@ use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\Policy;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
-use Programster\Nftables\PortSet;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Helpers\RuleFactory;
 use Programster\Nftables\Ruleset;
-use Programster\Nftables\Table;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Sets\PortSet;
+use Programster\Nftables\Tables\Table;
 
 $loopback = "lo";
 $wan = "eth0";
@@ -212,9 +214,7 @@ $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PRE
 $postrouting = new BaseChain("postrouting", $table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
 $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
 
-$ruleset = new Ruleset();
-
-$ruleset->addRule(
+$rules = new RuleCollection(
     // The gateway itself: the LAN can reach it, and your trusted address can SSH to it.
     RuleFactory::createAcceptInterface($input, $loopback),
     RuleFactory::createAcceptInterface($input, $lan),
@@ -250,6 +250,8 @@ $ruleset->addRule(
     // Let the port forwarded connections through the forward chain.
     RuleFactory::createAcceptPortForwards($forward),
 );
+
+$ruleset = new Ruleset($rules);
 
 file_put_contents("/etc/gateway/ruleset.json", $ruleset->toJson());
 ```
@@ -326,24 +328,23 @@ new ruleset:
 
 ```php
 use Programster\Nftables\Collections\PortForwardCollection;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\PortForwardMapLayout;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\PortForward;
+use Programster\Nftables\Rules\PortForward;
+use Programster\Nftables\Sets\NamedSet;
 
 $trusted = NamedSet::createAddressSet($table, "trusted", IpVersion::IPV4, $trustedIp);
-$public = new PortForwardCollection([new PortForward(80, $webProxy, 80), new PortForward(443, $webProxy, 443)]);
-$publicUdp = new PortForwardCollection([new PortForward(443, $webProxy, 443)]);
+$public = new PortForwardCollection(new PortForward(80, $webProxy, 80), new PortForward(443, $webProxy, 443));
+$publicUdp = new PortForwardCollection(new PortForward(443, $webProxy, 443));
 
-$ssh = new PortForwardCollection([
+$ssh = new PortForwardCollection(
     new PortForward(2210, $webProxy, 22),
     new PortForward(2211, $appServer, 22),
     new PortForward(2212, $database, 22),
-]);
+);
 
-$ruleset = new Ruleset();
-
-$ruleset->addRule(
+$rules = new RuleCollection(
     RuleFactory::createAcceptInterface($input, $loopback),
     RuleFactory::createAcceptInterface($input, $lan),
     RuleFactory::createAcceptInterface($input, $wan, $replies),
@@ -359,6 +360,8 @@ $ruleset->addRule(
     RuleFactory::createMapPortForward($prerouting, $wan, "ssh", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $ssh, allowedSources: $trusted),
     RuleFactory::createAcceptPortForwards($forward),
 );
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -429,8 +432,8 @@ A single server, on the internet at `eth0`, serving HTTP, HTTPS and HTTP/3 to an
 address. A [named set](sets.md) holds addresses to block, which can be changed without reloading:
 
 ```php
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ConnectionStateSet;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\ConnectionState;
@@ -442,13 +445,14 @@ use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\Protocol;
 use Programster\Nftables\Enums\Verdict;
 use Programster\Nftables\Expressions\PayloadExpression;
-use Programster\Nftables\MatchFactory;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\PortSet;
-use Programster\Nftables\Rule;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Helpers\MatchFactory;
+use Programster\Nftables\Helpers\RuleFactory;
+use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
-use Programster\Nftables\Table;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Sets\PortSet;
+use Programster\Nftables\Tables\Table;
 
 $loopback = "lo";
 $wan = "eth0";
@@ -460,9 +464,7 @@ $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState:
 $blocklist = NamedSet::createAddressSet($table, "blocklist", IpVersion::IPV4, "203.0.113.66", "192.0.2.0/24");
 $fromBlocklist = MatchFactory::createInSet(PayloadExpression::create(PayloadField::IP_SADDR), $blocklist);
 
-$ruleset = new Ruleset();
-
-$ruleset->addRule(
+$rules = new RuleCollection(
     Rule::create($input, $fromBlocklist, Verdict::DROP)->withComment("blocked addresses"),
     RuleFactory::createAcceptInterface($input, $loopback),
     RuleFactory::createAcceptInterface($input, $wan, $replies),
@@ -471,6 +473,8 @@ $ruleset->addRule(
     RuleFactory::createAcceptPort($input, $wan, 443, Protocol::UDP, comment: "HTTP/3"),
     RuleFactory::createAcceptPort($input, $wan, 22, sourceAddress: $trustedIp, comment: "SSH from the trusted address"),
 );
+
+$ruleset = new Ruleset($rules);
 
 file_put_contents("/etc/firewall/ruleset.json", $ruleset->toJson());
 ```

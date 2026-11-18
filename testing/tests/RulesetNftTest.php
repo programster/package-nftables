@@ -8,7 +8,7 @@
  */
 
 use Programster\Nftables\Enums\RulesetResetMode;
-use Programster\Nftables\Rule;
+use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Statements\RawStatement;
 use Programster\Nftables\Testing\Fixtures;
 use Programster\Nftables\Testing\NftNamespace;
@@ -33,9 +33,9 @@ $registerReloadTests = function (NftNamespace $nft) use ($smoke) : void {
 
         $testBadFile = function () use ($nft, $mode, $expected) : void {
             $good = $nft->writeRulesetFile("good-{$mode->name}.json", Fixtures::createTwoTableRuleset($mode));
-            $ruleset = Fixtures::createTwoTableRuleset($mode);
             $chain = Fixtures::createInputChain(Fixtures::createTable("ipv4Table"));
-            $ruleset->addRule(Rule::create($chain, new RawStatement(["nosuchstatement" => null]))->withComment("bad"));
+            $badRule = Rule::create($chain, new RawStatement(["nosuchstatement" => null]))->withComment("bad");
+            $ruleset = Fixtures::createTwoTableRuleset($mode, $badRule);
             $bad = $nft->writeRulesetFile("bad-{$mode->name}.json", $ruleset);
             $listing = $nft->listTablesAfter([$nft->load($good), $nft->loadExpectingFailure($bad)]);
             SmokeTestRunner::assertSame($expected, $listing, "what's loaded after the bad file");

@@ -19,8 +19,7 @@
 - [Anything else](#anything-else)
 
 A rule is a list of statements, which all implement the `Statement` interface. The examples add them to rules in these
-chains, and leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`, `Statements`,
-`Expressions` and `Exceptions` namespaces.
+chains, and leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ```php
 $table = new Table("t", Family::IP);
@@ -28,7 +27,6 @@ $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Pri
 $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT, Policy::ACCEPT);
 $postrouting = new BaseChain("postrouting", $table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
 $isTcp = MatchFactory::createTransportProtocol(Protocol::TCP);
-$ruleset = new Ruleset();
 ```
 
 ## Verdicts
@@ -50,7 +48,12 @@ can be built from an expression, an `Operator` and a value:
 
 ```php
 $dport = PayloadExpression::create(PayloadField::TCP_DPORT);
-$ruleset->addRule(Rule::create($input, new MatchStatement($dport, Operator::LESS_THAN, 1024), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($dport, Operator::LESS_THAN, 1024), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -65,7 +68,11 @@ A `CounterStatement` counts the packets and bytes that reach it, as shown by `nf
 the packet to the kernel log, optionally with a prefix (up to 127 bytes), a level and extra details:
 
 ```php
-$ruleset->addRule(Rule::create($input, new CounterStatement(), new LogStatement("dropped: ", LogLevel::INFO, LogFlag::TCP_SEQUENCE), Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($input, new CounterStatement(), new LogStatement("dropped: ", LogLevel::INFO, LogFlag::TCP_SEQUENCE), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -86,7 +93,9 @@ most 10 new SSH connections a minute, with a burst of 5:
 $isNew = MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::NEW));
 $isSsh = MatchFactory::createDestinationPorts(Protocol::TCP, 22);
 $tooFast = new LimitStatement(10, LimitPeriod::MINUTE, LimitMatch::OVER_LIMIT, 5);
-$ruleset->addRule(Rule::create($input, $isSsh, $isNew, $tooFast, Verdict::DROP));
+
+$rules = new RuleCollection(Rule::create($input, $isSsh, $isNew, $tooFast, Verdict::DROP));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -106,7 +115,11 @@ So matching `WITHIN_QUOTA` and then dropping would drop the first part of the tr
 through. To drop everything once 10 GB has arrived:
 
 ```php
-$ruleset->addRule(Rule::create($input, new QuotaStatement(10240, QuotaUnit::MBYTES, QuotaMatch::OVER_QUOTA), Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($input, new QuotaStatement(10240, QuotaUnit::MBYTES, QuotaMatch::OVER_QUOTA), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -124,7 +137,12 @@ its own in a rule, it counts every connection that reaches it, e.g. to allow at 
 
 ```php
 $toSsh = MatchFactory::createDestinationPorts(Protocol::TCP, 22);
-$ruleset->addRule(Rule::create($input, $toSsh, new ConnectionLimitStatement(100, LimitMatch::OVER_LIMIT), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, $toSsh, new ConnectionLimitStatement(100, LimitMatch::OVER_LIMIT), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -147,8 +165,12 @@ out:
 | `RejectStatement::createIcmpx(IcmpxRejectCode)` | An ICMP error worded the same for IPv4 and IPv6 | `inet` |
 
 ```php
-$ruleset->addRule(Rule::create($input, $isTcp, RejectStatement::createTcpReset()));
-$ruleset->addRule(Rule::create($input, RejectStatement::createIcmp(IcmpRejectCode::ADMIN_PROHIBITED)));
+$rules = new RuleCollection(
+    Rule::create($input, $isTcp, RejectStatement::createTcpReset()),
+    Rule::create($input, RejectStatement::createIcmp(IcmpRejectCode::ADMIN_PROHIBITED)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -176,10 +198,14 @@ e.g. to do all of a gateway's port forwards in one rule. See [port forwarding wi
 map](maps.md#port-forwarding-with-a-map).
 
 ```php
-$ruleset->addRule(Rule::create($prerouting, $isTcp, DnatStatement::create("10.0.0.10", 8080)));
-$ruleset->addRule(Rule::create($prerouting, $isTcp, new RedirectStatement(3128)));
-$ruleset->addRule(Rule::create($postrouting, SnatStatement::create("203.0.113.1")));
-$ruleset->addRule(Rule::create($postrouting, $isTcp, new MasqueradeStatement(new PortRange(1024, 65535), NatFlag::FULLY_RANDOM)));
+$rules = new RuleCollection(
+    Rule::create($prerouting, $isTcp, DnatStatement::create("10.0.0.10", 8080)),
+    Rule::create($prerouting, $isTcp, new RedirectStatement(3128)),
+    Rule::create($postrouting, SnatStatement::create("203.0.113.1")),
+    Rule::create($postrouting, $isTcp, new MasqueradeStatement(new PortRange(1024, 65535), NatFlag::FULLY_RANDOM)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -197,7 +223,11 @@ routing, with `ip rule`) can act on:
 - `MangleStatement::createSetCtMark($mark)` marks the connection, so every later packet in it has the mark.
 
 ```php
-$ruleset->addRule(Rule::create($input, MangleStatement::createSetMetaMark(42), MangleStatement::createSetCtMark(7)));
+$rules = new RuleCollection(
+    Rule::create($input, MangleStatement::createSetMetaMark(42), MangleStatement::createSetCtMark(7)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -213,7 +243,12 @@ works before tracking starts, so it belongs in a chain on the prerouting or outp
 
 ```php
 $raw = new BaseChain("raw", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::RAW, Policy::ACCEPT);
-$ruleset->addRule(Rule::create($raw, MatchFactory::createDestinationPorts(Protocol::UDP, 53), new NotrackStatement()));
+
+$rules = new RuleCollection(
+    Rule::create($raw, MatchFactory::createDestinationPorts(Protocol::UDP, 53), new NotrackStatement()),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -237,9 +272,13 @@ $untracked = MatchFactory::createConnectionStates(new ConnectionStateSet(Connect
 $invalid = MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::INVALID));
 $synproxy = new SynproxyStatement(1460, 7, SynproxyFlag::TIMESTAMP, SynproxyFlag::SACK_PERMITTED);
 
-$ruleset->addRule(Rule::create($raw, $toWeb, MatchFactory::createTcpSyn(), new NotrackStatement()));
-$ruleset->addRule(Rule::create($input, $toWeb, $untracked, $synproxy));
-$ruleset->addRule(Rule::create($input, $invalid, Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($raw, $toWeb, MatchFactory::createTcpSyn(), new NotrackStatement()),
+    Rule::create($input, $toWeb, $untracked, $synproxy),
+    Rule::create($input, $invalid, Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -263,7 +302,12 @@ match on the transport protocol (e.g. a port match):
 ```php
 $mangle = new BaseChain("mangle", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::MANGLE, Policy::ACCEPT);
 $toHttp = MatchFactory::createDestinationPorts(Protocol::TCP, 80);
-$ruleset->addRule(Rule::create($mangle, $toHttp, MangleStatement::createSetMetaMark(1), TproxyStatement::createToAddress("127.0.0.1", 3128)));
+
+$rules = new RuleCollection(
+    Rule::create($mangle, $toHttp, MangleStatement::createSetMetaMark(1), TproxyStatement::createToAddress("127.0.0.1", 3128)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -287,8 +331,12 @@ while it restarts) has to be chosen:
 - `QueueFailMode::ACCEPT` accepts them, so traffic flows unchecked.
 
 ```php
-$ruleset->addRule(Rule::create($input, QueueStatement::create(QueueFailMode::ACCEPT, 3)));
-$ruleset->addRule(Rule::create($input, QueueStatement::createSpread(QueueFailMode::DROP, 4, 7)));
+$rules = new RuleCollection(
+    Rule::create($input, QueueStatement::create(QueueFailMode::ACCEPT, 3)),
+    Rule::create($input, QueueStatement::createSpread(QueueFailMode::DROP, 4, 7)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -307,8 +355,13 @@ to port 7000 remembers the address for 30 seconds, and SSH is only accepted from
 $sourceAddress = PayloadExpression::create(PayloadField::IP_SADDR);
 $knocked = NamedSet::create($table, "knocked", SetType::IPV4_ADDR)->withTimeout(30)->withSize(1000);
 $addKnock = new SetUpdateStatement(SetUpdateOperation::ADD, $knocked, $sourceAddress);
-$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 7000), $addKnock));
-$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 22), MatchFactory::createInSet($sourceAddress, $knocked), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 7000), $addKnock),
+    Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 22), MatchFactory::createInSet($sourceAddress, $knocked), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -325,11 +378,15 @@ e.g. to drop the new connections of any address that opens more than 10 a second
 unaffected. These need nft 1.0.6 (e.g. Debian 12), as older nft silently drops them:
 
 ```php
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_12);
 $flood = NamedSet::create($table, "flood", SetType::IPV4_ADDR)->withTimeout(60)->withSize(65535);
 $isNewConnection = MatchFactory::createConnectionStates(new ConnectionStateSet(ConnectionState::NEW));
 $overLimit = new LimitStatement(10, LimitPeriod::SECOND, LimitMatch::OVER_LIMIT);
-$ruleset->addRule(Rule::create($input, $isNewConnection, new SetUpdateStatement(SetUpdateOperation::UPDATE, $flood, $sourceAddress, $overLimit), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, $isNewConnection, new SetUpdateStatement(SetUpdateOperation::UPDATE, $flood, $sourceAddress, $overLimit), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
@@ -347,7 +404,12 @@ removes each address by itself once its connections have all closed. It still ne
 ```php
 $connections = NamedSet::create($table, "connections", SetType::IPV4_ADDR)->withSize(65535);
 $tooManyConnections = new ConnectionLimitStatement(20, LimitMatch::OVER_LIMIT);
-$ruleset->addRule(Rule::create($input, new SetUpdateStatement(SetUpdateOperation::ADD, $connections, $sourceAddress, $tooManyConnections), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, new SetUpdateStatement(SetUpdateOperation::ADD, $connections, $sourceAddress, $tooManyConnections), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
@@ -359,7 +421,12 @@ remember an address that broke a rule for an hour, in a set whose elements norma
 
 ```php
 $offenders = NamedSet::create($table, "offenders", SetType::IPV4_ADDR)->withTimeout(60)->withSize(10000);
-$ruleset->addRule(Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 23), new SetUpdateStatement(SetUpdateOperation::ADD, $offenders, new TimedElement($sourceAddress, 3600))));
+
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createDestinationPorts(Protocol::TCP, 23), new SetUpdateStatement(SetUpdateOperation::ADD, $offenders, new TimedElement($sourceAddress, 3600))),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
@@ -383,11 +450,15 @@ Ethernet header set for that hop, as routing would. Using one in any other table
 
 ```php
 $mirror = new BaseChain("mirror", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::FILTER, Policy::ACCEPT);
-$ruleset->addRule(Rule::create($mirror, DupStatement::createToAddress("10.0.0.9")));
+
+$rules = new RuleCollection(Rule::create($mirror, DupStatement::createToAddress("10.0.0.9")));
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 
 $edge = new Table("edge", Family::NETDEV);
 $ingress = new BaseChain("ingress", $edge, ChainType::FILTER, ChainHook::INGRESS, Priority::FILTER, Policy::ACCEPT, "eth0");
-$ruleset->addRule(Rule::create($ingress, FwdStatement::createToDevice("eth1")));
+
+$rules = new RuleCollection(Rule::create($ingress, FwdStatement::createToDevice("eth1")));
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
@@ -411,7 +482,8 @@ takes it in nft's JSON form, exactly as the
 describes it:
 
 ```php
-$ruleset->addRule(Rule::create($input, new RawStatement(["log" => ["group" => 2]]), Verdict::DROP));
+$rules = new RuleCollection(Rule::create($input, new RawStatement(["log" => ["group" => 2]]), Verdict::DROP));
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft

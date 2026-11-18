@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Expressions;
 
+use Programster\Nftables\Internal\ExpressionLib;
+
 /**
  * A range of values, from one to another inclusive, e.g. ports 5000-6000, or addresses 10.0.0.1-10.0.0.9.
  */

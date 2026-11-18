@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
+use Programster\Nftables\Chains\RegularChain;
 use Programster\Nftables\Collections\TableItemCollection;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\RegularChain;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Continues at the first rule of another chain. When that chain ends (or returns), evaluation carries on with the rule
@@ -31,7 +31,7 @@ final readonly class JumpStatement implements Statement, ReferencesTableItems
 
     public function getReferencedItems() : TableItemCollection
     {
-        return new TableItemCollection([$this->m_target]);
+        return new TableItemCollection($this->m_target);
     }
 
 

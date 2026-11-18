@@ -4,26 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\TableItem;
-use Ramsey\Collection\Map\AbstractTypedMap;
+use Programster\Collections\AbstractMap;
+use Programster\Nftables\Tables\TableItem;
 
 /**
  * Table items (chains, sets, maps, flowtables and named objects), keyed by a string that's unique to each, for looking
- * them up. Keys that aren't strings, and values that aren't a TableItem, are rejected as they're added. It keeps the
- * order they were added in.
+ * them up. It keeps the order they were added in. It's mutable, so whatever holds one should never hand it out.
  *
- * @extends AbstractTypedMap<string, TableItem>
+ * @extends AbstractMap<TableItem, TableItemEntry>
  */
-final class TableItemMap extends AbstractTypedMap
+final class TableItemMap extends AbstractMap
 {
-    public function getKeyType() : string
+    /**
+     * Create a map of table items.
+     * @param TableItemEntry ...$entries - the items, each with its key. There can be none.
+     */
+    public function __construct(TableItemEntry ...$entries)
     {
-        return "string";
-    }
-
-
-    public function getValueType() : string
-    {
-        return TableItem::class;
+        parent::__construct(...$entries);
     }
 }

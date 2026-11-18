@@ -10,9 +10,10 @@ use Programster\Nftables\Enums\NatFlag;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Expressions\MapLookupExpression;
-use Programster\Nftables\PortRange;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\NatLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Sets\PortRange;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Changes the packet's destination address (and optionally port), e.g. to forward a port to a machine behind
@@ -102,6 +103,6 @@ final readonly class DnatStatement implements Statement, ReferencesTableItems
 
     public function getReferencedItems() : TableItemCollection
     {
-        return clone $this->m_referencedItems;
+        return $this->m_referencedItems;
     }
 }

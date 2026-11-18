@@ -1,0 +1,7 @@
+# Editor settings for this repository. See https://editorconfig.org
+root = true
+
+[*.php]
+# No line of code or comment may be longer than 120 characters. PhpStorm uses this as its right margin (where it hard
+# wraps and warns about long lines), and so do other editors that support max_line_length.
+max_line_length = 120

@@ -6,12 +6,10 @@
  * run by testing/main.php, which provides $smoke and $dir.
  */
 
-use Programster\Nftables\AnonymousMap;
-use Programster\Nftables\AnonymousVerdictMap;
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Chains\RegularChain;
 use Programster\Nftables\Collections\PortForwardCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
-use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\BinaryOperator;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
@@ -42,7 +40,6 @@ use Programster\Nftables\Enums\QuotaMatch;
 use Programster\Nftables\Enums\QuotaUnit;
 use Programster\Nftables\Enums\SctpChunk;
 use Programster\Nftables\Enums\SctpChunkField;
-use Programster\Nftables\Enums\SetFlag;
 use Programster\Nftables\Enums\SetType;
 use Programster\Nftables\Enums\SetUpdateOperation;
 use Programster\Nftables\Enums\TcpOptionField;
@@ -64,13 +61,15 @@ use Programster\Nftables\Expressions\SctpChunkExpression;
 use Programster\Nftables\Expressions\SetExpression;
 use Programster\Nftables\Expressions\TcpOptionExpression;
 use Programster\Nftables\Expressions\TimedElement;
-use Programster\Nftables\Flowtable;
-use Programster\Nftables\MapElement;
-use Programster\Nftables\MatchFactory;
-use Programster\Nftables\NamedMap;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\NamedVerdictMap;
-use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Helpers\MatchFactory;
+use Programster\Nftables\Helpers\NetworkLib;
+use Programster\Nftables\Helpers\RuleFactory;
+use Programster\Nftables\Maps\AnonymousMap;
+use Programster\Nftables\Maps\AnonymousVerdictMap;
+use Programster\Nftables\Maps\MapElement;
+use Programster\Nftables\Maps\NamedMap;
+use Programster\Nftables\Maps\NamedVerdictMap;
+use Programster\Nftables\Maps\VerdictMapElement;
 use Programster\Nftables\Objects\CtExpectation;
 use Programster\Nftables\Objects\CtHelper;
 use Programster\Nftables\Objects\CtTimeout;
@@ -78,12 +77,12 @@ use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedCounter;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
-use Programster\Nftables\PortForward;
-use Programster\Nftables\PortRange;
-use Programster\Nftables\PortSet;
-use Programster\Nftables\RegularChain;
-use Programster\Nftables\Rule;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Rules\PortForward;
+use Programster\Nftables\Rules\Rule;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Sets\PortRange;
+use Programster\Nftables\Sets\PortSet;
 use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
 use Programster\Nftables\Statements\DupStatement;
@@ -99,8 +98,8 @@ use Programster\Nftables\Statements\QuotaStatement;
 use Programster\Nftables\Statements\SetUpdateStatement;
 use Programster\Nftables\Statements\SynproxyStatement;
 use Programster\Nftables\Statements\TproxyStatement;
-use Programster\Nftables\Table;
-use Programster\Nftables\VerdictMapElement;
+use Programster\Nftables\Tables\Flowtable;
+use Programster\Nftables\Tables\Table;
 use Programster\Nftables\Testing\Fixtures;
 use Programster\Nftables\Testing\SmokeTestRunner;
 
@@ -428,13 +427,13 @@ $createANegativeSetTimeout = function () use ($ipTable) : void {
 $cases[] = ["a negative set timeout", BadArgumentException::class, "can't be negative", $createANegativeSetTimeout];
 
 $createASetTypeThatIsnTASetType = function () use ($ipTable) : void {
-    NamedSet::create($ipTable, "s", new SetTypeCollection(["ipv4_addr"]));
+    NamedSet::create($ipTable, "s", new SetTypeCollection("ipv4_addr"));
 };
 
-// Caught by the collection, as it's built.
+// Caught by PHP, as the collection's constructor only takes SetTypes.
 $cases[] = [
     "a set type that isn't a SetType",
-    Ramsey\Collection\Exception\InvalidArgumentException::class,
+    TypeError::class,
     "must be of type Programster\\Nftables\\Enums\\SetType",
     $createASetTypeThatIsnTASetType,
 ];
@@ -937,7 +936,7 @@ $cases[] = ["an SCTP field existence check", BadArgumentException::class, "check
 
 $natPrerouting = Fixtures::createBaseChain($ipTable, ChainType::NAT, ChainHook::PREROUTING);
 $twoMaps = PortForwardMapLayout::TWO_MAPS;
-$oneForward = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22)]);
+$oneForward = new PortForwardCollection(new PortForward(2222, "10.0.0.2", 22));
 
 $createAMapPortForwardInAFilterChain = function () use ($prerouting, $oneForward) : void {
     $layout = PortForwardMapLayout::TWO_MAPS;
@@ -952,7 +951,7 @@ $cases[] = [
 ];
 
 $createAnIpv6MapPortForwardInAnIpTable = function () use ($natPrerouting, $twoMaps) : void {
-    $forwards = new PortForwardCollection([new PortForward(80, "fd00::1", 80)]);
+    $forwards = new PortForwardCollection(new PortForward(80, "fd00::1", 80));
     RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $twoMaps, IpVersion::IPV6, $forwards);
 };
 
@@ -964,14 +963,14 @@ $cases[] = [
 ];
 
 $createAMixedMapPortForward = function () use ($natPrerouting, $twoMaps) : void {
-    $forwards = new PortForwardCollection([new PortForward(80, "10.0.0.1", 80), new PortForward(81, "fd00::1", 80)]);
+    $forwards = new PortForwardCollection(new PortForward(80, "10.0.0.1", 80), new PortForward(81, "fd00::1", 80));
     RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $twoMaps, IpVersion::IPV4, $forwards);
 };
 
 $cases[] = ["a map port forward to both IP versions", BadArgumentException::class, "81", $createAMixedMapPortForward];
 
 $createAPortForwardedTwice = function () use ($natPrerouting) : void {
-    $forwards = new PortForwardCollection([new PortForward(80, "10.0.0.1", 80), new PortForward(80, "10.0.0.2", 80)]);
+    $forwards = new PortForwardCollection(new PortForward(80, "10.0.0.1", 80), new PortForward(80, "10.0.0.2", 80));
     $oneMap = PortForwardMapLayout::ONE_MAP;
     RuleFactory::createMapPortForward($natPrerouting, "eth0", "f", $oneMap, IpVersion::IPV4, $forwards);
 };
@@ -1233,6 +1232,69 @@ $cases[] = [
     UnsuitableChainException::class,
     "only handles one IP version",
     $createMasqueradingIpv6InAnIpTable,
+];
+
+// Each tries to limit the connections per source to port 587 of a destination, in a chain of an ip table.
+$createPerSourceLimits = function (ChainHook $hook, ChainType $type, string $to, int $max) use ($ipTable) : void {
+    $chain = Fixtures::createBaseChain($ipTable, $type, $hook);
+    $period = LimitPeriod::MINUTE;
+    RuleFactory::createPerSourceConnectionLimits($chain, "eth0", "smtp", $to, 587, $max, 60, $period);
+};
+
+$createPerSourceLimitsInANatChain = function () use ($createPerSourceLimits) : void {
+    $createPerSourceLimits(ChainHook::PREROUTING, ChainType::NAT, "10.0.0.25", 10);
+};
+
+$cases[] = [
+    "connection limits per source in a nat chain",
+    UnsuitableChainException::class,
+    "filter",
+    $createPerSourceLimitsInANatChain,
+];
+
+$createPerSourceLimitsToIpv6InAnIpTable = function () use ($createPerSourceLimits) : void {
+    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "fd00::25", 10);
+};
+
+$cases[] = [
+    "connection limits per source to an IPv6 address in an ip table",
+    UnsuitableChainException::class,
+    "needs an ip6 or inet table",
+    $createPerSourceLimitsToIpv6InAnIpTable,
+];
+
+$createPerSourceLimitsToABadAddress = function () use ($createPerSourceLimits) : void {
+    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "10.0.0.300", 10);
+};
+
+$cases[] = [
+    "connection limits per source to an address that isn't one",
+    InvalidAddressException::class,
+    "10.0.0.300",
+    $createPerSourceLimitsToABadAddress,
+];
+
+$createPerSourceLimitsOfNoConnections = function () use ($createPerSourceLimits) : void {
+    $createPerSourceLimits(ChainHook::FORWARD, ChainType::FILTER, "10.0.0.25", 0);
+};
+
+$cases[] = [
+    "connection limits per source of no connections",
+    BadArgumentException::class,
+    "at least 1",
+    $createPerSourceLimitsOfNoConnections,
+];
+
+$createMasqueradingFromABadAddress = function () use ($ipTable) : void {
+    $postrouting = Fixtures::createBaseChain($ipTable, ChainType::NAT, ChainHook::POSTROUTING);
+    RuleFactory::createMasquerade($postrouting, "eth1", sourceAddress: "10.0.0.300");
+};
+
+$cases[] = [
+    "masquerading from an address that isn't one",
+    InvalidAddressException::class,
+    "10.0.0.300",
+    $createMasqueradingFromABadAddress,
 ];
 
 foreach ($cases as [$description, $exceptionClass, $messageContains, $code])

@@ -4,6 +4,7 @@
 - [Testing every supported PHP version](#testing-every-supported-php-version)
 - [Testing every target](#testing-every-target)
 - [Running some of the tests](#running-some-of-the-tests)
+- [PHPStan](#phpstan)
 - [Continuous integration](#continuous-integration)
 - [Writing tests](#writing-tests)
 
@@ -45,7 +46,8 @@ testing/run-all-php-versions.sh 8.2 8.5     # only these versions
 testing/run-all-php-versions.sh --rebuild   # rebuild the images first, to get the latest PHP patch releases
 ```
 
-For each version, it lints every file, then runs the tests. The images (`php:<version>-cli` with nft added) are built
+For each version, it lints every file, then runs the tests. After them all, it runs [PHPStan](#phpstan) once, on the
+lowest version tested. The images (`php:<version>-cli` with nft added) are built
 the first time they're needed, and then reused. When a new version of PHP is released, add it to
 `SUPPORTED_VERSIONS` at the top of the script.
 
@@ -82,6 +84,17 @@ NFTABLES_TEST_ONLY="nft:" composer test         # only the tests that load into 
 NFTABLES_TEST_ONLY="Validation" composer test   # only the input checks
 ```
 
+## PHPStan
+```bash
+vendor/bin/phpstan
+```
+
+It's set up in `phpstan.neon.dist`, at level 5, for every supported PHP version. It includes
+[programster/collections](https://github.com/programster/package-collections)' rule, which reports writing to a
+readonly collection with array syntax (e.g. `$rule->getStatements()[] = $statement`) where it's written, rather than
+when it throws. The only errors it ignores are the ones the tests cause on purpose, by passing the wrong type or
+writing to a readonly collection, to check that it's rejected.
+
 ## Continuous integration
 `.github/workflows/tests.yml` runs `testing/run-all-php-versions.sh` and `testing/run-all-targets.sh`, as two jobs, on
 pushes to `main`, on every tag, and on pull requests into `main`. It can also be run by hand on any branch, with "Run
@@ -98,7 +111,7 @@ afterwards). Assign each test to a named closure, then run it:
 
 ```php
 $testDefaultResetMode = function () : void {
-    $ruleset = new Ruleset();
+    $ruleset = new Ruleset(new RuleCollection());
     SmokeTestRunner::assertSame(RulesetResetMode::REPLACE_OWN_TABLES, $ruleset->getResetMode(), "the default mode");
 };
 

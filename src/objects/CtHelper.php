@@ -6,7 +6,8 @@ namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Enums\CtHelperType;
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\Table;
+use Programster\Nftables\Internal\IpFamilyLib;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A conntrack helper, for a protocol whose connections open further connections, e.g. FTP's data connections. Once a

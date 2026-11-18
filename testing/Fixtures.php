@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Testing;
 
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Chains\EmptyChain;
+use Programster\Nftables\Collections\EmptyChainCollection;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\Family;
@@ -12,10 +15,10 @@ use Programster\Nftables\Enums\Policy;
 use Programster\Nftables\Enums\Priority;
 use Programster\Nftables\Enums\RulesetResetMode;
 use Programster\Nftables\Enums\Verdict;
-use Programster\Nftables\MatchFactory;
-use Programster\Nftables\Rule;
+use Programster\Nftables\Helpers\MatchFactory;
+use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Table;
 
 /**
  * Builds the tables, chains, rules and rulesets the tests use.
@@ -33,18 +36,19 @@ final class Fixtures
      *
      * @param RulesetResetMode $mode - the reset mode to give it.
      *
+     * @param Rule ...$extraRules - optionally, more rules to add after those two.
+     *
      * @return Ruleset
      */
-    public static function createTwoTableRuleset(RulesetResetMode $mode) : Ruleset
+    public static function createTwoTableRuleset(RulesetResetMode $mode, Rule ...$extraRules) : Ruleset
     {
         $chain = self::createInputChain(self::createTable("ipv4Table"));
         $ipv6Table = new Table("ipv6Table", Family::IP6);
-        $ruleset = new Ruleset(resetMode: $mode);
-        $ruleset->addChain(self::createInputChain($ipv6Table));
         $isLoopback = MatchFactory::createInputInterfaceName("lo");
-        $ruleset->addRule(Rule::create($chain, $isLoopback, Verdict::ACCEPT)->withComment("lo"));
-        $ruleset->addRule(self::createAcceptRule($chain, "second"));
-        return $ruleset;
+        $loopbackRule = Rule::create($chain, $isLoopback, Verdict::ACCEPT)->withComment("lo");
+        $rules = new RuleCollection($loopbackRule, self::createAcceptRule($chain, "second"), ...$extraRules);
+        $emptyChains = new EmptyChainCollection(self::createEmptyInputChain($ipv6Table));
+        return new Ruleset($rules, resetMode: $mode, emptyChains: $emptyChains);
     }
 
 
@@ -63,6 +67,29 @@ final class Fixtures
     public static function createChain(string $name, Table $table, Policy $policy) : BaseChain
     {
         return new BaseChain($name, $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, $policy);
+    }
+
+
+    /**
+     * Create an empty chain, the same as createChain() would, but with no rules allowed in it.
+     *
+     * @param string $name - the chain's name.
+     *
+     * @param Table $table - its table.
+     *
+     * @param Policy $policy - its policy.
+     *
+     * @return EmptyChain
+     */
+    public static function createEmptyChain(string $name, Table $table, Policy $policy) : EmptyChain
+    {
+        return new EmptyChain($name, $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, $policy);
+    }
+
+
+    public static function createEmptyInputChain(Table $table) : EmptyChain
+    {
+        return self::createEmptyChain("input", $table, Policy::DROP);
     }
 
 

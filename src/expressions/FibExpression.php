@@ -54,7 +54,7 @@ final readonly class FibExpression implements Expression
         }
 
         $this->m_result = $result;
-        $this->m_flags = new FibFlagCollection(array_values($uniqueFlags));
+        $this->m_flags = new FibFlagCollection(...array_values($uniqueFlags));
     }
 
 

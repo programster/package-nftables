@@ -53,7 +53,7 @@ final readonly class LogStatement implements Statement
             $uniqueFlags[$flag->value] = $flag;
         }
 
-        $this->m_flags = new LogFlagCollection(array_values($uniqueFlags));
+        $this->m_flags = new LogFlagCollection(...array_values($uniqueFlags));
     }
 
 

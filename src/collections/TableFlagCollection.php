@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\TableFlag;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of a table's flags. Anything that isn't a TableFlag is rejected as it's added.
+ * A list of a table's flags. It can't be changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<TableFlag>
+ * @extends AbstractReadonlyCollection<TableFlag>
  */
-final class TableFlagCollection extends AbstractCollection
+final readonly class TableFlagCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of a table's flags.
+     * @param TableFlag ...$flags - the table's flags. There can be none.
+     */
+    public function __construct(TableFlag ...$flags)
     {
-        return TableFlag::class;
+        parent::__construct(...$flags);
     }
 }

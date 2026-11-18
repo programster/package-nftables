@@ -7,8 +7,7 @@
   - [Devices](#devices)
 - [Regular chains](#regular-chains)
 
-The examples leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`,
-`Statements`, `Expressions` and `Exceptions` namespaces.
+The examples leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ## Tables
 A table holds chains and [sets](sets.md), and belongs to one address family, which decides which packets its chains
@@ -87,8 +86,7 @@ netdev families only have `FILTER`. To run a chain just before or after one of t
 $priority = Priority::FILTER->getValue(Family::INET) - 10;
 $early = new BaseChain("early", $table, ChainType::FILTER, ChainHook::INPUT, $priority, Policy::ACCEPT);
 
-$ruleset = new Ruleset();
-$ruleset->addChain($early);
+$ruleset = new Ruleset(new RuleCollection(Rule::create($early, Verdict::ACCEPT)));
 ```
 
 ```nft
@@ -108,8 +106,7 @@ $netdev = new Table("edge", Family::NETDEV);
 $ingress = new BaseChain("ingress", $netdev, ChainType::FILTER, ChainHook::INGRESS, Priority::FILTER, Policy::ACCEPT, "lo");
 
 // Ingress and egress chains need nft 1.0.6 or later, so the ruleset needs a target that has it.
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_12);
-$ruleset->addChain($ingress);
+$ruleset = new Ruleset(new RuleCollection(Rule::create($ingress, Verdict::ACCEPT)), NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
@@ -124,10 +121,13 @@ A regular chain isn't attached to a hook, so it only sees the packets that a rul
 $ssh = new RegularChain("ssh", $table);
 $isSsh = MatchFactory::createDestinationPorts(Protocol::TCP, 22);
 
-$ruleset = new Ruleset();
-$ruleset->addRule(Rule::create($input, $isSsh, new JumpStatement($ssh)));
-$ruleset->addRule(Rule::create($ssh, MatchFactory::createSourceAddress("198.51.100.0/24"), Verdict::ACCEPT));
-$ruleset->addRule(Rule::create($ssh, new LogStatement("ssh refused: "), Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($input, $isSsh, new JumpStatement($ssh)),
+    Rule::create($ssh, MatchFactory::createSourceAddress("198.51.100.0/24"), Verdict::ACCEPT),
+    Rule::create($ssh, new LogStatement("ssh refused: "), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft

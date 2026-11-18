@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\AnonymousVerdictMap;
 use Programster\Nftables\Collections\TableItemCollection;
 use Programster\Nftables\Expressions\Expression;
-use Programster\Nftables\NamedVerdictMap;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Maps\AnonymousVerdictMap;
+use Programster\Nftables\Maps\NamedVerdictMap;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Looks a key up in a verdict map, and applies the verdict it maps to, e.g.
@@ -51,11 +51,11 @@ final readonly class VerdictMapStatement implements Statement, ReferencesTableIt
         // A named map's chains are added along with the map.
         if ($this->m_map instanceof NamedVerdictMap)
         {
-            $items->add($this->m_map);
+            $items = $items->merge(new TableItemCollection($this->m_map));
         }
         else
         {
-            TableItemLib::addAll($items, $this->m_map->getReferencedItems());
+            $items = $items->merge($this->m_map->getReferencedItems());
         }
 
         return $items;

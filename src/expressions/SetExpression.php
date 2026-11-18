@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Internal\ExpressionLib;
 
 /**
  * An anonymous set of values, written into the rule itself, e.g. { 22, 80, 443 }. For a set that's shared between

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Enums\Family;
 use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
-use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Helpers\NetworkLib;
 
 /**
  * Sends a copy of the packet somewhere else, while the original carries on as normal, e.g. to mirror traffic to an

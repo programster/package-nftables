@@ -20,9 +20,8 @@
 | **Verdict map** (`NamedVerdictMap`) | A lookup table from a key in the packet to what happens to it: accept, drop, or a jump to a chain | `tcp dport vmap @services` |
 | **Anonymous map** (`AnonymousMap`, `AnonymousVerdictMap`) | Either kind, written into the rule itself, for a fixed list only one rule uses | `tcp dport vmap { 22 : accept, 25 : drop }` |
 
-Use one when a rule would otherwise be repeated once per port, address or interface, with only the values changing.
-The examples leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`,
-`Statements`, `Expressions` and `Exceptions` namespaces.
+Use one when a rule would otherwise be repeated once per port, address or interface, with only the values changing. The
+examples leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ```php
 $table = new Table("gateway", Family::IP);
@@ -30,7 +29,6 @@ $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PRE
 $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
 $destinationPort = PayloadExpression::create(PayloadField::TCP_DPORT);
 $sourceAddress = PayloadExpression::create(PayloadField::IP_SADDR);
-$ruleset = new Ruleset();
 ```
 
 ## How a map works
@@ -119,7 +117,9 @@ each a `MapElement` of a key and a value. `lookUp()` gives an expression for the
 $marks = NamedMap::create($table, "marks", SetType::IPV4_ADDR, SetType::MARK);
 $marks = $marks->withElements(new MapElement("10.0.0.2", 1), new MapElement("10.0.0.3", 2));
 $markBySource = new MangleStatement(new MetaExpression(MetaKey::MARK), $marks->lookUp($sourceAddress));
-$ruleset->addRule(Rule::create($input, $markBySource));
+
+$rules = new RuleCollection(Rule::create($input, $markBySource));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -146,13 +146,16 @@ forwards, as described here. How the port is mapped too depends on the target's 
 With nft 1.1.3 (Debian 13), RHEL 9 or later, one map can give the address and port together, as a concatenation:
 
 ```php
-$guestAndPort = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+$guestAndPort = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
 $forwards = NamedMap::create($table, "forwards", SetType::INET_SERVICE, $guestAndPort);
 $forwards = $forwards->withElements(new MapElement(2222, new ConcatExpression("10.0.0.2", 22)), new MapElement(8080, new ConcatExpression("10.0.0.3", 80)));
 $fromWan = MatchFactory::createInputInterfaceName("eth0");
 
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_13);
-$ruleset->addRule(Rule::create($prerouting, $fromWan, DnatStatement::createFromMap(IpVersion::IPV4, $forwards->lookUp($destinationPort))));
+$rules = new RuleCollection(
+    Rule::create($prerouting, $fromWan, DnatStatement::createFromMap(IpVersion::IPV4, $forwards->lookUp($destinationPort))),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_13);
 ```
 
 ```nft
@@ -175,8 +178,11 @@ $addresses = $addresses->withElements(new MapElement(2222, "10.0.0.2"), new MapE
 $ports = NamedMap::create($table, "forward_ports", SetType::INET_SERVICE, SetType::INET_SERVICE);
 $ports = $ports->withElements(new MapElement(2222, 22), new MapElement(8080, 80));
 
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_11);
-$ruleset->addRule(Rule::create($prerouting, $fromWan, DnatStatement::createFromMap(IpVersion::IPV4, $addresses->lookUp($destinationPort), $ports->lookUp($destinationPort))));
+$rules = new RuleCollection(
+    Rule::create($prerouting, $fromWan, DnatStatement::createFromMap(IpVersion::IPV4, $addresses->lookUp($destinationPort), $ports->lookUp($destinationPort))),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_11);
 ```
 
 ```nft
@@ -196,7 +202,9 @@ Either way:
 
 ```php
 $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::DROP);
-$ruleset->addRule(RuleFactory::createAcceptPortForwards($forward));
+
+$rules = new RuleCollection(RuleFactory::createAcceptPortForwards($forward));
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_11);
 ```
 
 ```nft
@@ -229,9 +237,12 @@ $private = $private->withElements(new MapElement(22, new ConcatExpression("10.0.
 $public = NamedMap::create($table, "public_forwards", SetType::INET_SERVICE, $guestAndPort);
 $public = $public->withElements(new MapElement(443, new ConcatExpression("10.0.0.3", 443)));
 
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_13);
-$ruleset->addRule(Rule::create($prerouting, $wan, $fromTrusted, DnatStatement::createFromMap(IpVersion::IPV4, $private->lookUp($destinationPort))));
-$ruleset->addRule(Rule::create($prerouting, $wan, DnatStatement::createFromMap(IpVersion::IPV4, $public->lookUp($destinationPort))));
+$rules = new RuleCollection(
+    Rule::create($prerouting, $wan, $fromTrusted, DnatStatement::createFromMap(IpVersion::IPV4, $private->lookUp($destinationPort))),
+    Rule::create($prerouting, $wan, DnatStatement::createFromMap(IpVersion::IPV4, $public->lookUp($destinationPort))),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_13);
 ```
 
 ```nft
@@ -262,8 +273,8 @@ $web = new RegularChain("web", $table);
 $services = NamedVerdictMap::create($table, "services", SetType::INET_SERVICE);
 $services = $services->withElements(new VerdictMapElement(22, Verdict::ACCEPT), new VerdictMapElement(80, new JumpStatement($web)), new VerdictMapElement(443, new JumpStatement($web)));
 
-$ruleset = new Ruleset();
-$ruleset->addRule(Rule::create($input, $services->lookUp($destinationPort)));
+$rules = new RuleCollection(Rule::create($input, $services->lookUp($destinationPort)));
+$ruleset = new Ruleset($rules);
 ```
 
 ![A verdict map sending packets to a verdict or a chain](images/verdict-map.svg)
@@ -326,10 +337,17 @@ and needs no name or types. E.g. to spread new connections to port 80 over two m
 $backends = new AnonymousMap(new MapElement(0, "10.0.0.5"), new MapElement(1, "10.0.0.6"));
 $takeTurns = new NumgenExpression(NumgenMode::INCREMENTAL, 2);
 $isWeb = MatchFactory::createDestinationPorts(Protocol::TCP, 80);
-$ruleset->addRule(Rule::create($prerouting, $isWeb, DnatStatement::createFromMap(IpVersion::IPV4, $backends->lookUp($takeTurns))));
+
+$rules = new RuleCollection(
+    Rule::create($prerouting, $isWeb, DnatStatement::createFromMap(IpVersion::IPV4, $backends->lookUp($takeTurns))),
+);
+
+$ruleset = new Ruleset($rules);
 
 $knownPorts = new AnonymousVerdictMap(new VerdictMapElement(22, Verdict::ACCEPT), new VerdictMapElement(25, Verdict::DROP));
-$ruleset->addRule(Rule::create($input, $knownPorts->lookUp($destinationPort)));
+
+$rules = new RuleCollection(Rule::create($input, $knownPorts->lookUp($destinationPort)));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft

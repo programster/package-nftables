@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ChainLib;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Collections\TableItemCollection;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
-use Programster\Nftables\Flowtable;
-use Programster\Nftables\ReferencesTableItems;
+use Programster\Nftables\Internal\ChainLib;
+use Programster\Nftables\Tables\Flowtable;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Offloads the packet's connection to a flowtable (flow add @fastpath), so its later packets take the flowtable's fast
@@ -36,7 +36,7 @@ final readonly class FlowOffloadStatement implements Statement, ReferencesTableI
 
     public function getReferencedItems() : TableItemCollection
     {
-        return new TableItemCollection([$this->m_flowtable]);
+        return new TableItemCollection($this->m_flowtable);
     }
 
 

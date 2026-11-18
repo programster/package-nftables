@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\NameLib;
+use Programster\Nftables\Internal\NameLib;
 use Programster\Nftables\Statements\NamedObjectStatement;
-use Programster\Nftables\Table;
-use Programster\Nftables\TableItem;
+use Programster\Nftables\Tables\Table;
+use Programster\Nftables\Tables\TableItem;
 
 /**
  * A named, stateful object in a table, e.g. a counter or a quota, which any number of rules can use, and whose state

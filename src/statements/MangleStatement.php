@@ -10,10 +10,10 @@ use Programster\Nftables\Enums\MetaKey;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Expressions\CtExpression;
 use Programster\Nftables\Expressions\Expression;
-use Programster\Nftables\Expressions\ExpressionLib;
 use Programster\Nftables\Expressions\MetaExpression;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\ExpressionLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Changes part of a packet, or its metadata, e.g. sets its mark, so later rules or routing can act on it.

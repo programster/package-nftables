@@ -14,11 +14,12 @@
  * These are run by testing/main.php, which provides $smoke and $dir.
  */
 
-use Programster\Nftables\AnonymousMap;
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Chains\EmptyChain;
+use Programster\Nftables\Collections\EmptyChainCollection;
 use Programster\Nftables\Collections\PortForwardCollection;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
-use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\ConnectionState;
@@ -51,20 +52,22 @@ use Programster\Nftables\Expressions\OsfExpression;
 use Programster\Nftables\Expressions\PayloadExpression;
 use Programster\Nftables\Expressions\SctpChunkExpression;
 use Programster\Nftables\Expressions\SocketExpression;
-use Programster\Nftables\Flowtable;
-use Programster\Nftables\MapElement;
-use Programster\Nftables\MatchFactory;
-use Programster\Nftables\NamedMap;
-use Programster\Nftables\NamedSet;
+use Programster\Nftables\Helpers\MatchFactory;
+use Programster\Nftables\Helpers\RuleFactory;
+use Programster\Nftables\Maps\AnonymousMap;
+use Programster\Nftables\Maps\MapElement;
+use Programster\Nftables\Maps\NamedMap;
 use Programster\Nftables\Objects\CtExpectation;
 use Programster\Nftables\Objects\CtTimeout;
 use Programster\Nftables\Objects\CtTimeoutPolicy;
 use Programster\Nftables\Objects\NamedSynproxy;
 use Programster\Nftables\Objects\Secmark;
-use Programster\Nftables\PortForward;
-use Programster\Nftables\Rule;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Rules\PortForward;
+use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Sets\PortSet;
 use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
 use Programster\Nftables\Statements\DnatStatement;
@@ -77,7 +80,8 @@ use Programster\Nftables\Statements\SetUpdateStatement;
 use Programster\Nftables\Statements\Statement;
 use Programster\Nftables\Statements\SynproxyStatement;
 use Programster\Nftables\Statements\TproxyStatement;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Flowtable;
+use Programster\Nftables\Tables\Table;
 use Programster\Nftables\Testing\NftNamespace;
 use Programster\Nftables\Testing\SmokeTestRunner;
 use Programster\Nftables\Testing\TestTarget;
@@ -87,20 +91,16 @@ use Programster\Nftables\Testing\TestTarget;
 
 $createDormantTable = function (NftablesTarget $target) : Ruleset {
     $table = new Table("dormant", Family::INET, TableFlag::DORMANT);
-    $ruleset = new Ruleset($target);
-    $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::ACCEPT);
-    $ruleset->addChain($input);
-    return $ruleset;
+    $input = new EmptyChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::ACCEPT);
+    return new Ruleset(new RuleCollection(), $target, emptyChains: new EmptyChainCollection($input));
 };
 
 // Each is a chain on a hook that needs a device, in a family.
 $createDeviceChain = function (Family $family, ChainHook $hook) : Closure {
     $create = function (NftablesTarget $target) use ($family, $hook) : Ruleset {
         $table = new Table("devices", $family);
-        $ruleset = new Ruleset($target);
-        $chain = new BaseChain("chain", $table, ChainType::FILTER, $hook, Priority::FILTER, Policy::ACCEPT, "lo");
-        $ruleset->addChain($chain);
-        return $ruleset;
+        $chain = new EmptyChain("chain", $table, ChainType::FILTER, $hook, Priority::FILTER, Policy::ACCEPT, "lo");
+        return new Ruleset(new RuleCollection(), $target, emptyChains: new EmptyChainCollection($chain));
     };
 
     return $create;
@@ -113,14 +113,14 @@ $createRules = function (Family $family, ChainHook $hook, int|Priority $priority
         $type = ($hook === ChainHook::PREROUTING && $family === Family::IP) ? ChainType::NAT : ChainType::FILTER;
         $table = new Table("t", $family);
         $chain = new BaseChain("chain", $table, $type, $hook, $priority, Policy::ACCEPT);
-        $ruleset = new Ruleset($target);
+        $rules = [];
 
         foreach ($createStatements($table) as $statements)
         {
-            $ruleset->addRule(Rule::create($chain, ...$statements));
+            $rules[] = Rule::create($chain, ...$statements);
         }
 
-        return $ruleset;
+        return new Ruleset(new RuleCollection(...$rules), $target);
     };
 
     return $create;
@@ -153,13 +153,11 @@ $createFlowtable = function (NftablesTarget $target) : Ruleset {
     $table = new Table("t", Family::INET);
     $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWARD, 0, Policy::ACCEPT);
     $flowtable = new Flowtable("fastpath", $table, Priority::FILTER, "eth0", "eth1");
-    $ruleset = new Ruleset($target);
-    $ruleset->addRule(RuleFactory::createFlowOffload($forward, $flowtable));
-    return $ruleset;
+    return new Ruleset(new RuleCollection(RuleFactory::createFlowOffload($forward, $flowtable)), $target);
 };
 
 $createMapOfConcatenations = function (Table $table) use ($isTcp, $dport, $guestAndPort) : array {
-    $valueType = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+    $valueType = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
     $forwards = NamedMap::create($table, "forwards", SetType::INET_SERVICE, $valueType);
     $forwards = $forwards->withElements(new MapElement(2222, $guestAndPort));
     return [[$isTcp, DnatStatement::createFromMap(IpVersion::IPV4, $forwards->lookUp($dport))]];
@@ -249,11 +247,10 @@ $features[] = [
 $createOneMapPortForward = function (NftablesTarget $target) : Ruleset {
     $table = new Table("t", Family::IP);
     $nat = new BaseChain("nat", $table, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT, Policy::ACCEPT);
-    $forwards = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22)]);
+    $forwards = new PortForwardCollection(new PortForward(2222, "10.0.0.2", 22));
     $layout = PortForwardMapLayout::ONE_MAP;
-    $ruleset = new Ruleset($target);
-    $ruleset->addRule(RuleFactory::createMapPortForward($nat, "eth0", "forwards", $layout, IpVersion::IPV4, $forwards));
-    return $ruleset;
+    $rule = RuleFactory::createMapPortForward($nat, "eth0", "forwards", $layout, IpVersion::IPV4, $forwards);
+    return new Ruleset(new RuleCollection($rule), $target);
 };
 
 $features[] = [
@@ -362,6 +359,41 @@ $features[] = [
     ["add @connections { ip saddr ct count over 20 } drop"],
 ];
 
+$createPerSourceConnectionLimits = function (NftablesTarget $target) : Ruleset {
+    $table = new Table("t", Family::IP);
+    $hook = ChainHook::FORWARD;
+    $forward = new BaseChain("forward", $table, ChainType::FILTER, $hook, Priority::FILTER, Policy::ACCEPT);
+
+    $limits = RuleFactory::createPerSourceConnectionLimits(
+        $forward,
+        "eth0",
+        "smtp",
+        "10.0.0.25",
+        new PortSet(465, 587),
+        10,
+        60,
+        LimitPeriod::MINUTE,
+        comment: "SMTP",
+    );
+
+    return new Ruleset($limits, $target);
+};
+
+$perSourceMatches = 'iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new';
+$overRate = "update @smtp_rate { ip saddr limit rate over 60/minute burst 60 packets } drop";
+$overConnections = "add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset";
+$rateLine = "{$perSourceMatches} {$overRate} comment \"SMTP\"";
+$connectionsLine = "{$perSourceMatches} {$overConnections} comment \"SMTP\"";
+
+$features[] = [
+    "connection limits per source address (RuleFactory)",
+    "1.0.6",
+    "",
+    [],
+    $createPerSourceConnectionLimits,
+    [$rateLine, $connectionsLine, "timeout 1m", "size 65535"],
+];
+
 $createCtExpectation = function (Table $table) : array {
     $expectation = new CtExpectation("data", $table, IpVersion::IPV4, Protocol::TCP, 2021, 60, 12);
     return [[MatchFactory::createDestinationPorts(Protocol::TCP, 21), $expectation->createStatement()]];
@@ -397,9 +429,7 @@ $createNetdevRule = function (Statement $statement) : Closure {
     $create = function (NftablesTarget $target) use ($statement) : Ruleset {
         $table = new Table("t", Family::NETDEV);
         $chain = new BaseChain("in", $table, ChainType::FILTER, ChainHook::INGRESS, 0, Policy::ACCEPT, "eth0");
-        $ruleset = new Ruleset($target);
-        $ruleset->addRule(Rule::create($chain, $statement));
-        return $ruleset;
+        return new Ruleset(new RuleCollection(Rule::create($chain, $statement)), $target);
     };
 
     return $create;

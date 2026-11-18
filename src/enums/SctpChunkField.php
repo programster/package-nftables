@@ -52,6 +52,6 @@ enum SctpChunkField : string
             self::NEW_CUM_TSN => [SctpChunk::FORWARD_TSN],
         };
 
-        return new SctpChunkCollection($chunks);
+        return new SctpChunkCollection(...$chunks);
     }
 }

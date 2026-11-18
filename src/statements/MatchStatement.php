@@ -7,9 +7,9 @@ namespace Programster\Nftables\Statements;
 use Programster\Nftables\Collections\TableItemCollection;
 use Programster\Nftables\Enums\Operator;
 use Programster\Nftables\Expressions\Expression;
-use Programster\Nftables\Expressions\ExpressionLib;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\ExpressionLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Compares part of a packet with a value. If it doesn't match, the rest of the rule is skipped, and the packet moves on

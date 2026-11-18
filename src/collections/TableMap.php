@@ -4,25 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\Table;
-use Ramsey\Collection\Map\AbstractTypedMap;
+use Programster\Collections\AbstractMap;
+use Programster\Nftables\Tables\Table;
 
 /**
- * Tables, keyed by a string that's unique to each, e.g. its family and name, for looking them up. Keys that aren't
- * strings, and values that aren't a Table, are rejected as they're added. It keeps the order they were added in.
+ * Tables, keyed by a string that's unique to each, e.g. its family and name, for looking them up. It keeps the order
+ * they were added in. It's mutable, so whatever holds one should never hand it out.
  *
- * @extends AbstractTypedMap<string, Table>
+ * @extends AbstractMap<Table, TableEntry>
  */
-final class TableMap extends AbstractTypedMap
+final class TableMap extends AbstractMap
 {
-    public function getKeyType() : string
+    /**
+     * Create a map of tables.
+     * @param TableEntry ...$entries - the tables, each with its key. There can be none.
+     */
+    public function __construct(TableEntry ...$entries)
     {
-        return "string";
-    }
-
-
-    public function getValueType() : string
-    {
-        return Table::class;
+        parent::__construct(...$entries);
     }
 }

@@ -6,7 +6,7 @@ namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Statements\LimitStatement;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A named rate limit, which any number of rules can share (limit name "ssh"), so their packets count towards one

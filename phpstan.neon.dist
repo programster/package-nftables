@@ -1,0 +1,30 @@
+# PHPStan settings. Run with: vendor/bin/phpstan
+includes:
+    # programster/collections' rule, which reports writes to readonly collections with array syntax where they're
+    # written, rather than when they throw.
+    - vendor/programster/collections/extension.neon
+
+parameters:
+    level: 5
+    phpVersion:
+        min: 80200
+        max: 80599
+    paths:
+        - src
+        - testing
+    ignoreErrors:
+        # These tests deliberately pass the wrong type, to check that PHP rejects it when the code runs.
+        -
+            identifier: argument.type
+            path: testing/tests/RulesetTest.php
+            count: 1
+        -
+            identifier: argument.type
+            path: testing/tests/ValidationTest.php
+            count: 2
+        # This test deliberately writes to readonly collections with array syntax, to check that it throws when the
+        # code runs, as well as being reported by the rule.
+        -
+            identifier: collections.readonlyWrite
+            path: testing/tests/RulesetTest.php
+            count: 2

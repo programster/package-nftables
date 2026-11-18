@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\SetType;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of set element types, for a set of concatenations (e.g. an address and a port). Anything that isn't a
- * SetType is rejected as it's added.
+ * A list of set element types, for a set of concatenations (e.g. an address and a port). It can't be changed once it's
+ * created, so it can be shared freely.
  *
- * @extends AbstractCollection<SetType>
+ * @extends AbstractReadonlyCollection<SetType>
  */
-final class SetTypeCollection extends AbstractCollection
+final readonly class SetTypeCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of set element types, for a set of concatenations.
+     * @param SetType ...$types - the set element types. There can be none.
+     */
+    public function __construct(SetType ...$types)
     {
-        return SetType::class;
+        parent::__construct(...$types);
     }
 }

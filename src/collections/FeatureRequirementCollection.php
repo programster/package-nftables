@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\FeatureRequirement;
-use Ramsey\Collection\AbstractCollection;
+use Programster\Collections\AbstractReadonlyCollection;
+use Programster\Nftables\Internal\FeatureRequirement;
 
 /**
- * A list of the features that need a newer nft (or kernel) than the oldest supported. Anything that isn't a
- * FeatureRequirement is rejected as it's added.
+ * A list of the features that need a newer nft (or kernel) than the oldest supported. It can't be changed once it's
+ * created, so it can be shared freely.
  *
- * @extends AbstractCollection<FeatureRequirement>
+ * @extends AbstractReadonlyCollection<FeatureRequirement>
  */
-final class FeatureRequirementCollection extends AbstractCollection
+final readonly class FeatureRequirementCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of the features that need a newer nft (or kernel) than the oldest supported.
+     * @param FeatureRequirement ...$requirements - the features that need a newer nft (or kernel). There can be none.
+     */
+    public function __construct(FeatureRequirement ...$requirements)
     {
-        return FeatureRequirement::class;
+        parent::__construct(...$requirements);
     }
 }

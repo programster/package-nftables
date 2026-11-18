@@ -6,7 +6,8 @@ namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Collections\CtTimeoutPolicyCollection;
 use Programster\Nftables\Exceptions\BadArgumentException;
-use Programster\Nftables\Table;
+use Programster\Nftables\Internal\IpFamilyLib;
+use Programster\Nftables\Tables\Table;
 
 /**
  * Conntrack timeouts for the connections a rule assigns it to (ct timeout set "long-tcp"), in place of the system's
@@ -60,7 +61,7 @@ final readonly class CtTimeout extends NamedObject
             throw new BadArgumentException("A ct timeout can only have one timeout for each state.");
         }
 
-        $this->m_policies = new CtTimeoutPolicyCollection(array_values($policies));
+        $this->m_policies = new CtTimeoutPolicyCollection(...array_values($policies));
     }
 
 

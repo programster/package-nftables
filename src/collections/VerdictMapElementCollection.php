@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\VerdictMapElement;
-use Ramsey\Collection\AbstractCollection;
+use Programster\Collections\AbstractReadonlyCollection;
+use Programster\Nftables\Maps\VerdictMapElement;
 
 /**
- * A list of a verdict map's elements, each a key and the verdict for it. Anything that isn't a VerdictMapElement is
- * rejected as it's added.
+ * A list of a verdict map's elements, each a key and the verdict for it. It can't be changed once it's created, so it
+ * can be shared freely.
  *
- * @extends AbstractCollection<VerdictMapElement>
+ * @extends AbstractReadonlyCollection<VerdictMapElement>
  */
-final class VerdictMapElementCollection extends AbstractCollection
+final readonly class VerdictMapElementCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of a verdict map's elements, each a key and the verdict for it.
+     * @param VerdictMapElement ...$elements - the verdict map's elements. There can be none.
+     */
+    public function __construct(VerdictMapElement ...$elements)
     {
-        return VerdictMapElement::class;
+        parent::__construct(...$elements);
     }
 }

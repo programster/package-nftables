@@ -6,14 +6,24 @@ namespace Programster\Nftables;
 
 use JsonException;
 use JsonSerializable;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Chains\Chain;
+use Programster\Nftables\Chains\EmptyChain;
+use Programster\Nftables\Collections\EmptyChainCollection;
+use Programster\Nftables\Collections\EmptyTableCollection;
 use Programster\Nftables\Collections\RuleCollection;
+use Programster\Nftables\Collections\TableEntry;
+use Programster\Nftables\Collections\TableItemEntry;
 use Programster\Nftables\Collections\TableItemMap;
 use Programster\Nftables\Collections\TableMap;
 use Programster\Nftables\Enums\NftablesTarget;
 use Programster\Nftables\Enums\RulesetResetMode;
 use Programster\Nftables\Exceptions\ConflictException;
 use Programster\Nftables\Exceptions\UnsupportedFeatureException;
-use Programster\Nftables\Objects\NamedObject;
+use Programster\Nftables\Internal\Compatibility;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Tables\Table;
+use Programster\Nftables\Tables\TableItem;
 
 /**
  * A complete nftables ruleset, ready to be loaded with "nft --json --file". It takes care of the things that are easy
@@ -27,204 +37,124 @@ use Programster\Nftables\Objects\NamedObject;
  * - tables come first, then chains, then everything else in a table (sets, maps, flowtables and named objects), then
  * rules, so nothing refers to something that doesn't exist yet.
  *
- * Adding a rule adds everything it needs: its chain and table, and any chains, sets, maps, flowtables and named objects
- * it uses (including the chains a verdict map jumps to). Only items that no rule uses (e.g. a chain that exists just
- * for its drop policy) need adding explicitly.
+ * Its rules bring everything they need: their chains and tables, and any chains, sets, maps, flowtables and named
+ * objects they use (including the chains a verdict map jumps to). The only things that need passing in as well are
+ * the rare ones nothing else brings: a base chain with no rules, kept for its policy, and a table with nothing in it.
+ * Anything else that no rule uses would do nothing, so it can't be passed in at all.
  *
  * - it throws if it's given something its target's nft can't load, or would silently ignore, so the problem shows
  * up here rather than on the server. See NftablesTarget.
  *
- * This is mutable by design, as it's built up one item at a time.
+ * Everything is passed to the constructor, and it can't be changed afterwards.
  */
-final class Ruleset implements JsonSerializable
+final readonly class Ruleset implements JsonSerializable
 {
-    private readonly NftablesTarget $m_target;
-    private readonly RulesetResetMode $m_resetMode;
+    private NftablesTarget $m_target;
+    private RulesetResetMode $m_resetMode;
 
-    // Keyed by getTableKey(). Replaced with an updated copy whenever something is added, so a problem part way
-    // through leaves the ruleset as it was.
+    // Keyed by getTableKey().
     private TableMap $m_tables;
 
-    // The chains, sets, maps, flowtables and named objects, keyed by getItemKey(). Replaced as $m_tables is.
+    // The chains, sets, maps, flowtables and named objects, keyed by getItemKey().
     private TableItemMap $m_items;
 
-    // In the order they were added, which is the order nftables evaluates them in.
-    private readonly RuleCollection $m_rules;
+    // In the order nftables evaluates them in.
+    private RuleCollection $m_rules;
 
 
     /**
-     * Create an empty ruleset.
+     * Create a ruleset.
+     *
+     * @param RuleCollection $rules - the rules, in the order they should be matched. Everything they use (their chains
+     * and tables, and any chains, sets, maps, flowtables and named objects they refer to) is added with them. It can be
+     * empty, e.g. for a ruleset of only chains.
      *
      * @param NftablesTarget $target - where the ruleset will be loaded: an operating system release (e.g. DEBIAN_12)
-     * or an nft version. Adding anything that target can't load throws. Defaults to the oldest supported target (nft
-     * 0.9.8, as in Debian 11), so the ruleset loads anywhere, and only features every target has can be used.
+     * or an nft version. Anything that target can't load throws. Defaults to the oldest supported target (nft 0.9.8,
+     * as in Debian 11), so the ruleset loads anywhere, and only features every target has can be used.
      *
      * @param RulesetResetMode $resetMode - what to clear out before loading this ruleset. Defaults to only replacing
      * the tables this ruleset defines, leaving any tables created by other software (e.g. fail2ban or Docker) alone.
      * Pass FLUSH_ENTIRE_RULESET to wipe everything on the machine first.
+     *
+     * @param EmptyChainCollection $emptyChains - optionally, base chains with no rules, kept just for their policy,
+     * e.g. a forward chain with a drop policy on a machine that mustn't route anything. Their tables are added with
+     * them. A chain with rules doesn't need this, as its rules bring it.
+     *
+     * @param EmptyTableCollection $emptyTables - optionally, tables with nothing in them, e.g. to empty a table that's
+     * no longer used. A table with anything in it doesn't need this, as its chains and other items bring it.
+     *
+     * @throws ConflictException - if two different tables, or two different items of the same kind, share a name in
+     * the same place (sets and maps share their names in nftables), an empty chain has the same name as a chain with
+     * rules in its table, or an empty table has the same family and name as a table that's in use. The same table or
+     * item twice is fine.
+     *
+     * @throws UnsupportedFeatureException - if the target can't load a rule, table or item.
      */
     public function __construct(
+        RuleCollection $rules,
         NftablesTarget $target = NftablesTarget::NFTABLES_0_9_8,
         RulesetResetMode $resetMode = RulesetResetMode::REPLACE_OWN_TABLES,
+        EmptyChainCollection $emptyChains = new EmptyChainCollection(),
+        EmptyTableCollection $emptyTables = new EmptyTableCollection(),
     )
     {
         $this->m_target = $target;
         $this->m_resetMode = $resetMode;
-        $this->m_tables = new TableMap();
-        $this->m_items = new TableItemMap();
-        $this->m_rules = new RuleCollection();
-    }
+        $tableMap = new TableMap();
+        $itemMap = new TableItemMap();
 
-
-    /**
-     * Add a table. Adding the same table again has no effect.
-     *
-     * @param Table $table - the table to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a table with the same family and name, but different flags, was already added.
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it.
-     */
-    public function addTable(Table $table) : void
-    {
-        $tables = clone $this->m_tables;
-        $this->addTableTo($tables, $table);
-        $this->m_tables = $tables;
-    }
-
-
-    /**
-     * Add a named set, and the table it belongs to. Adding the same set again has no effect.
-     *
-     * @param NamedSet $set - the set to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a different set with the same name was already added to its table, or a
-     * different table with the same name as its table.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it, or its table.
-     */
-    public function addSet(NamedSet $set) : void
-    {
-        $this->addItems($set);
-    }
-
-
-    /**
-     * Add a chain, and the table it belongs to. Adding the same chain again has no effect.
-     *
-     * @param Chain $chain - the chain to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a different chain with the same name was already added to its table, or a
-     * different table with the same name as its table.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it, or its table.
-     */
-    public function addChain(Chain $chain) : void
-    {
-        $this->addItems($chain);
-    }
-
-
-    /**
-     * Add a map or verdict map, the table it belongs to, and any chains a verdict map jumps or goes to. Adding the same
-     * map again has no effect.
-     *
-     * @param NamedMap|NamedVerdictMap $map - the map to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a different set or map with the same name was already added to its table (sets
-     * and maps share their names in nftables), or anything else it adds conflicts with something already added.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it, or anything it adds.
-     */
-    public function addMap(NamedMap|NamedVerdictMap $map) : void
-    {
-        $this->addItems($map);
-    }
-
-
-    /**
-     * Add a flowtable, and the table it belongs to. Adding the same flowtable again has no effect.
-     *
-     * @param Flowtable $flowtable - the flowtable to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a different flowtable with the same name was already added to its table, or a
-     * different table with the same name as its table.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it, or its table.
-     */
-    public function addFlowtable(Flowtable $flowtable) : void
-    {
-        $this->addItems($flowtable);
-    }
-
-
-    /**
-     * Add a named object (e.g. a NamedCounter, so its count can be read with "nft list counters"), and the table it
-     * belongs to. Adding the same object again has no effect.
-     *
-     * @param NamedObject $object - the object to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if a different object of the same kind and name was already added to its table, or a
-     * different table with the same name as its table.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load it, or its table.
-     */
-    public function addObject(NamedObject $object) : void
-    {
-        $this->addItems($object);
-    }
-
-
-    /**
-     * Add one or more rules to the end of the ruleset, along with everything they use: their chains and tables, and any
-     * chains, sets, maps, flowtables and named objects they use. Rules are evaluated in the order they're added, so add
-     * them in the order you want them to be matched.
-     *
-     * @param Rule ...$rules - the rule(s) to add.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if anything a rule uses conflicts with something already added, or with something
-     * another of the rules uses. None of the rules are added if this is thrown.
-     *
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load a rule, or anything it uses. None of the
-     * rules are added if this is thrown.
-     */
-    public function addRule(Rule ...$rules) : void
-    {
-        // Work on copies, so a problem part way through doesn't leave only some of the rules added.
-        $tables = clone $this->m_tables;
-        $items = clone $this->m_items;
+        // The keys of the chains that have rules, as an empty chain can't have the same name as one of them.
+        $chainsWithRules = [];
 
         foreach ($rules as $rule)
         {
-            Compatibility::assertSupported($rule->toArray(), $this->m_target);
-            $this->addItemTo($tables, $items, $rule->getChain());
+            Compatibility::assertSupported($rule->toArray(), $target);
+            $this->addItemTo($tableMap, $itemMap, $rule->getChain());
+            $chainsWithRules[] = self::getItemKey($rule->getChain());
 
             foreach ($rule->getReferencedItems() as $referencedItem)
             {
-                $this->addItemTo($tables, $items, $referencedItem);
+                $this->addItemTo($tableMap, $itemMap, $referencedItem);
             }
         }
 
-        $this->m_tables = $tables;
-        $this->m_items = $items;
-
-        foreach ($rules as $rule)
+        foreach ($emptyChains as $emptyChain)
         {
-            $this->m_rules->add($rule);
+            $chain = self::createChain($emptyChain);
+
+            if (in_array(self::getItemKey($chain), $chainsWithRules, true))
+            {
+                $where = "{$chain->getTable()->getFamily()->value} {$chain->getTable()->getName()}";
+                $name = $chain->getName();
+                $message = "The empty chain {$name} in table {$where} has the same name as a chain with rules.";
+                throw new ConflictException($message);
+            }
+
+            $this->addItemTo($tableMap, $itemMap, $chain);
         }
+
+        // An empty table can't also be one that's in use, as it would be in the ruleset twice: once with its contents,
+        // and once without them.
+        $tablesInUse = $tableMap->keys();
+
+        foreach ($emptyTables as $emptyTable)
+        {
+            $table = new Table($emptyTable->getName(), $emptyTable->getFamily());
+
+            if (in_array(self::getTableKey($table), $tablesInUse, true))
+            {
+                $description = "{$table->getFamily()->value} {$table->getName()}";
+                $message = "The empty table {$description} is also in use. Leave it out of the empty tables.";
+                throw new ConflictException($message);
+            }
+
+            $this->addTableTo($tableMap, $table);
+        }
+
+        $this->m_tables = $tableMap;
+        $this->m_items = $itemMap;
+        $this->m_rules = $rules;
     }
 
 
@@ -268,7 +198,7 @@ final class Ruleset implements JsonSerializable
             }
         }
 
-        $definitions = [...$this->m_tables->toArray(), ...$chains, ...$otherItems, ...$this->m_rules->toArray()];
+        $definitions = [...$this->m_tables->values(), ...$chains, ...$otherItems, ...$this->m_rules];
 
         foreach ($definitions as $definition)
         {
@@ -319,34 +249,15 @@ final class Ruleset implements JsonSerializable
     {
         Compatibility::assertSupported($table->toArray(), $this->m_target);
         $key = self::getTableKey($table);
-        $existing = $tables->get($key);
-        self::assertNoConflict($existing, $table->toArray(), "table {$table->getName()}");
-        $tables->put($key, $table);
-    }
 
-
-    /**
-     * Add items to the ruleset, along with their tables and anything they refer to, all or nothing.
-     *
-     * @param TableItem ...$items - the items.
-     *
-     * @return void
-     *
-     * @throws ConflictException - if anything conflicts with something already added.
-     * @throws UnsupportedFeatureException - if the ruleset's target can't load anything.
-     */
-    private function addItems(TableItem ...$items) : void
-    {
-        $tables = clone $this->m_tables;
-        $addedItems = clone $this->m_items;
-
-        foreach ($items as $item)
+        if ($tables->containsKey($key))
         {
-            $this->addItemTo($tables, $addedItems, $item);
+            self::assertNoConflict($tables->get($key), $table->toArray(), "table {$table->getName()}");
         }
-
-        $this->m_tables = $tables;
-        $this->m_items = $addedItems;
+        else
+        {
+            $tables->put(new TableEntry($key, $table));
+        }
     }
 
 
@@ -371,9 +282,14 @@ final class Ruleset implements JsonSerializable
     {
         Compatibility::assertSupported($item->toArray(), $this->m_target);
         $key = self::getItemKey($item);
-        self::assertNoConflict($items->get($key), $item->toArray(), TableItemLib::describe($item));
+
+        if ($items->containsKey($key))
+        {
+            self::assertNoConflict($items->get($key), $item->toArray(), TableItemLib::describe($item));
+        }
+
         $this->addTableTo($tables, $item->getTable());
-        $items->put($key, $item);
+        $items->put(new TableItemEntry($key, $item));
 
         foreach (TableItemLib::collectReferencesOfItem($item) as $referencedItem)
         {
@@ -383,9 +299,9 @@ final class Ruleset implements JsonSerializable
 
 
     /**
-     * Check that what's already stored where a new table or item will go, if anything, is the same as it.
+     * Check that what's already stored where a new table or item will go is the same as it.
      *
-     * @param Table|TableItem|null $existing - what's already stored there, or null if nothing is.
+     * @param Table|TableItem $existing - what's already stored there.
      *
      * @param array $definition - the new table or item's toArray().
      *
@@ -396,15 +312,36 @@ final class Ruleset implements JsonSerializable
      * @throws ConflictException - if something different is already stored there.
      */
     private static function assertNoConflict(
-        Table|TableItem|null $existing,
+        Table|TableItem $existing,
         array $definition,
         string $description,
     ) : void
     {
-        if ($existing !== null && $existing->toArray() !== $definition)
+        if ($existing->toArray() !== $definition)
         {
             throw new ConflictException("A different {$description} has already been added in the same place.");
         }
+    }
+
+
+    /**
+     * Create the base chain an empty chain stands for, which only the ruleset ever has.
+     *
+     * @param EmptyChain $emptyChain - the empty chain.
+     *
+     * @return BaseChain
+     */
+    private static function createChain(EmptyChain $emptyChain) : BaseChain
+    {
+        return new BaseChain(
+            $emptyChain->getName(),
+            $emptyChain->getTable(),
+            $emptyChain->getType(),
+            $emptyChain->getHook(),
+            $emptyChain->getPriority(),
+            $emptyChain->getPolicy(),
+            $emptyChain->getDevice(),
+        );
     }
 
 

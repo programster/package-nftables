@@ -18,14 +18,12 @@
 - [Anything else](#anything-else)
 
 Expressions are the values inside statements: what a match reads from the packet, and what it compares it with. They
-implement the `Expression` interface. The examples match against them in this chain, and leave out `use` statements.
-Every class is in `Programster\Nftables`, or one of its `Enums`, `Statements`, `Expressions` and `Exceptions`
-namespaces.
+implement the `Expression` interface. The examples match against them in this chain, and leave out `use` statements. See
+[namespaces](getting-started.md#namespaces) for where each class is.
 
 ```php
 $table = new Table("t", Family::INET);
 $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::ACCEPT);
-$ruleset = new Ruleset();
 ```
 
 ## Plain values
@@ -41,7 +39,12 @@ protocol, then the field, e.g. `PayloadField::TCP_DPORT` for `tcp dport`, or `Pa
 
 ```php
 $type = PayloadExpression::create(PayloadField::ICMP_TYPE);
-$ruleset->addRule(Rule::create($input, new MatchStatement($type, Operator::EQUALS, "echo-request"), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($type, Operator::EQUALS, "echo-request"), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -64,9 +67,17 @@ key, so match `MetaKey::NFPROTO` first, as below. (nft treats that match as impl
 ```php
 $ownMark = new BinaryOperationExpression(BinaryOperator::AND, new MetaExpression(MetaKey::MARK), 0xFF);
 $startedBy = new CtExpression(CtKey::SADDR, CtDirection::ORIGINAL, IpVersion::IPV4);
-$ruleset->addRule(Rule::create($input, new MatchStatement($ownMark, Operator::EQUALS, 1), Verdict::ACCEPT));
+
+$rules = new RuleCollection(Rule::create($input, new MatchStatement($ownMark, Operator::EQUALS, 1), Verdict::ACCEPT));
+$ruleset = new Ruleset($rules);
+
 $isIpv4 = new MatchStatement(new MetaExpression(MetaKey::NFPROTO), Operator::EQUALS, "ipv4");
-$ruleset->addRule(Rule::create($input, $isIpv4, new MatchStatement($startedBy, Operator::EQUALS, "10.0.0.1"), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, $isIpv4, new MatchStatement($startedBy, Operator::EQUALS, "10.0.0.1"), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -100,8 +111,13 @@ Some things are checked for being there, rather than compared with a value: an I
 ```php
 $fragmentHeader = ExthdrExpression::create(Ipv6ExtensionHeader::FRAGMENT);
 $sackPermitted = TcpOptionExpression::create(TcpOption::SACK_PERMITTED);
-$ruleset->addRule(Rule::create($input, MatchFactory::createExistence($fragmentHeader, Existence::EXISTS), Verdict::DROP));
-$ruleset->addRule(Rule::create($input, MatchFactory::createExistence($sackPermitted, Existence::MISSING), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createExistence($fragmentHeader, Existence::EXISTS), Verdict::DROP),
+    Rule::create($input, MatchFactory::createExistence($sackPermitted, Existence::MISSING), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -121,7 +137,9 @@ an `AddressType`:
 
 ```php
 $isForThisMachine = new MatchStatement(new FibExpression(FibResult::TYPE, FibFlag::DADDR), Operator::EQUALS, AddressType::LOCAL);
-$ruleset->addRule(Rule::create($input, $isForThisMachine, Verdict::ACCEPT));
+
+$rules = new RuleCollection(Rule::create($input, $isForThisMachine, Verdict::ACCEPT));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -139,8 +157,13 @@ on or change (with a `MangleStatement`):
 ```php
 $moreFragments = ExthdrExpression::createField(Ipv6ExtensionHeaderField::FRAG_MORE_FRAGMENTS);
 $segmentSize = TcpOptionExpression::createField(TcpOptionField::MAXSEG_SIZE);
-$ruleset->addRule(Rule::create($input, new MatchStatement($moreFragments, Operator::EQUALS, 1), Verdict::DROP));
-$ruleset->addRule(Rule::create($input, new MatchStatement($segmentSize, Operator::LESS_THAN, 536), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($moreFragments, Operator::EQUALS, 1), Verdict::DROP),
+    Rule::create($input, new MatchStatement($segmentSize, Operator::LESS_THAN, 536), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -168,7 +191,9 @@ away, rather than going through the `TproxyStatement` again. It only works on th
 
 ```php
 $hasTransparentSocket = new MatchStatement(new SocketExpression(SocketKey::TRANSPARENT), Operator::EQUALS, 1);
-$ruleset->addRule(Rule::create($input, $hasTransparentSocket, Verdict::ACCEPT));
+
+$rules = new RuleCollection(Rule::create($input, $hasTransparentSocket, Verdict::ACCEPT));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -189,8 +214,13 @@ packet that didn't go through IPsec doesn't match. To just check whether it did,
 ```php
 $fromTunnel1 = new MatchStatement(IpsecExpression::create(IpsecDirection::IN, IpsecKey::REQID), Operator::EQUALS, 1);
 $fromGateway = new MatchStatement(IpsecExpression::createAddress(IpsecDirection::IN, PacketEndpoint::SOURCE, IpVersion::IPV4), Operator::EQUALS, "203.0.113.5");
-$ruleset->addRule(Rule::create($input, $fromTunnel1, Verdict::ACCEPT));
-$ruleset->addRule(Rule::create($input, $fromGateway, Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, $fromTunnel1, Verdict::ACCEPT),
+    Rule::create($input, $fromGateway, Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -207,7 +237,12 @@ A `ConcatExpression` joins values, so they're matched together, e.g. an address 
 ```php
 $addressAndPort = new ConcatExpression(PayloadExpression::create(PayloadField::IP_SADDR), PayloadExpression::create(PayloadField::TCP_DPORT));
 $allowed = new SetExpression(new ConcatExpression("10.0.0.1", 22), new ConcatExpression("10.0.0.2", 443));
-$ruleset->addRule(Rule::create($input, new MatchStatement($addressAndPort, Operator::EQUALS, $allowed), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($addressAndPort, Operator::EQUALS, $allowed), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -230,8 +265,13 @@ number from a hash of the packet instead, so packets with the same values always
 ```php
 $mark = new MetaExpression(MetaKey::MARK);
 $byClient = HashExpression::createJhash(PayloadExpression::create(PayloadField::IP_SADDR), 2, 0, 0x2a);
-$ruleset->addRule(Rule::create($input, new MangleStatement($mark, new NumgenExpression(NumgenMode::RANDOM, 4))));
-$ruleset->addRule(Rule::create($input, new MangleStatement($mark, $byClient)));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MangleStatement($mark, new NumgenExpression(NumgenMode::RANDOM, 4))),
+    Rule::create($input, new MangleStatement($mark, $byClient)),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -249,7 +289,9 @@ are laid out (`OsfKey::NAME`, e.g. `Linux`, or `VERSION`, e.g. `Linux:4.20`):
 
 ```php
 $looksLikeLinux = new MatchStatement(new OsfExpression(OsfKey::NAME, OsfTtlCheck::LOOSE), Operator::EQUALS, "Linux");
-$ruleset->addRule(Rule::create($input, $looksLikeLinux, new LogStatement("linux: ")));
+
+$rules = new RuleCollection(Rule::create($input, $looksLikeLinux, new LogStatement("linux: ")));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -270,11 +312,15 @@ An `SctpChunkExpression` is a chunk of an SCTP packet. As for TCP options, `crea
 and kernel 5.14 (or RHEL 8's, which has them backported):
 
 ```php
-$ruleset = new Ruleset(NftablesTarget::UBUNTU_22_04);
 $hasInit = MatchFactory::createExistence(SctpChunkExpression::create(SctpChunk::INIT), Existence::EXISTS);
 $sequenceNumber = SctpChunkExpression::createField(SctpChunk::DATA, SctpChunkField::TSN);
-$ruleset->addRule(Rule::create($input, $hasInit, Verdict::ACCEPT));
-$ruleset->addRule(Rule::create($input, new MatchStatement($sequenceNumber, Operator::EQUALS, 0), Verdict::DROP));
+
+$rules = new RuleCollection(
+    Rule::create($input, $hasInit, Verdict::ACCEPT),
+    Rule::create($input, new MatchStatement($sequenceNumber, Operator::EQUALS, 0), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::UBUNTU_22_04);
 ```
 
 ```nft
@@ -290,7 +336,12 @@ describes it. It's passed on without any checks.
 
 ```php
 $routerAlert = new RawExpression(["ip option" => ["name" => "ra"]]);
-$ruleset->addRule(Rule::create($input, new MatchStatement($routerAlert, Operator::EQUALS, Existence::EXISTS), Verdict::ACCEPT));
+
+$rules = new RuleCollection(
+    Rule::create($input, new MatchStatement($routerAlert, Operator::EQUALS, Existence::EXISTS), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::UBUNTU_22_04);
 ```
 
 ```nft

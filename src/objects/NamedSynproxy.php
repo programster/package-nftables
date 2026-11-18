@@ -6,7 +6,7 @@ namespace Programster\Nftables\Objects;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Statements\SynproxyStatement;
-use Programster\Nftables\Table;
+use Programster\Nftables\Tables\Table;
 
 /**
  * A named synproxy, which any number of rules can share (synproxy name "web"), so its settings are only written once.

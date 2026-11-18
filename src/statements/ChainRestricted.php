@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
 
 /**

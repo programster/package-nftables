@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Internal\ExpressionLib;
 
 /**
  * Several values joined into one, so they can be matched together, e.g. a source address and destination port

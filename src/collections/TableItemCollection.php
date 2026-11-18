@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\TableItem;
-use Ramsey\Collection\AbstractCollection;
+use Programster\Collections\AbstractReadonlyCollection;
+use Programster\Nftables\Tables\TableItem;
 
 /**
- * A list of table items (chains, sets, maps, flowtables and named objects), e.g. the ones a rule uses. Anything that
- * isn't a TableItem is rejected as it's added.
+ * A list of table items (chains, sets, maps, flowtables and named objects), e.g. the ones a rule uses. It can't be
+ * changed once it's created, so it can be shared freely.
  *
- * @extends AbstractCollection<TableItem>
+ * @extends AbstractReadonlyCollection<TableItem>
  */
-final class TableItemCollection extends AbstractCollection
+final readonly class TableItemCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of table items (chains, sets, maps, flowtables and named objects).
+     * @param TableItem ...$items - the table items. There can be none.
+     */
+    public function __construct(TableItem ...$items)
     {
-        return TableItem::class;
+        parent::__construct(...$items);
     }
 }

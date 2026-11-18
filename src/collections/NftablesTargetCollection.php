@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\NftablesTarget;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of targets, e.g. the ones a feature was backported to. Anything that isn't a NftablesTarget is rejected as
- * it's added.
+ * A list of targets, e.g. the ones a feature was backported to. It can't be changed once it's created, so it can be
+ * shared freely.
  *
- * @extends AbstractCollection<NftablesTarget>
+ * @extends AbstractReadonlyCollection<NftablesTarget>
  */
-final class NftablesTargetCollection extends AbstractCollection
+final readonly class NftablesTargetCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of targets.
+     * @param NftablesTarget ...$targets - the targets. There can be none.
+     */
+    public function __construct(NftablesTarget ...$targets)
     {
-        return NftablesTarget::class;
+        parent::__construct(...$targets);
     }
 }

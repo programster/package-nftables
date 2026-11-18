@@ -5,8 +5,7 @@
 - [Features that need a newer target](#features-that-need-a-newer-target)
 - [How the targets are tested](#how-the-targets-are-tested)
 
-The examples leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`,
-`Statements`, `Expressions` and `Exceptions` namespaces.
+The examples leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ## Why a ruleset needs a target
 The machine that generates a ruleset often isn't the one that loads it, and the server's nft can be years older. Old
@@ -14,17 +13,15 @@ versions of nft don't just reject what they can't handle: some silently ignore i
 load a dormant table, but quietly drop the flag, so its rules stay on.
 
 So a `Ruleset` is told where it will be loaded, with an `NftablesTarget`, and refuses anything that target can't load,
-when it's added:
-
-```php
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_12);
-```
+when it's created:
 
 ```php
 // Throws UnsupportedFeatureException
 // "The dormant table flag needs nft 1.1.3 or later, but this ruleset is for Debian 12 (nft 1.0.6). Pass a newer
 // NftablesTarget to the Ruleset to use it."
-$ruleset->addTable(new Table("staging", Family::INET, TableFlag::DORMANT));
+$staging = new Table("staging", Family::INET, TableFlag::DORMANT);
+$input = new BaseChain("input", $staging, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
+$ruleset = new Ruleset(new RuleCollection(Rule::create($input, Verdict::ACCEPT)), NftablesTarget::DEBIAN_12);
 ```
 
 Without a target, a ruleset is for the oldest supported nft (0.9.8, as in Debian 11), so it loads anywhere, and only

@@ -9,13 +9,14 @@
  * testing/main.php, which provides $smoke and $dir.
  */
 
-use Programster\Nftables\AnonymousMap;
-use Programster\Nftables\AnonymousVerdictMap;
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\Chain;
+use Programster\Nftables\Chains\BaseChain;
+use Programster\Nftables\Chains\Chain;
+use Programster\Nftables\Chains\EmptyChain;
+use Programster\Nftables\Chains\RegularChain;
+use Programster\Nftables\Collections\EmptyChainCollection;
 use Programster\Nftables\Collections\PortForwardCollection;
+use Programster\Nftables\Collections\RuleCollection;
 use Programster\Nftables\Collections\SetTypeCollection;
-use Programster\Nftables\ConnectionStateSet;
 use Programster\Nftables\Enums\AddressType;
 use Programster\Nftables\Enums\BinaryOperator;
 use Programster\Nftables\Enums\ChainHook;
@@ -32,11 +33,11 @@ use Programster\Nftables\Enums\IcmpRejectCode;
 use Programster\Nftables\Enums\Icmpv6RejectCode;
 use Programster\Nftables\Enums\Icmpv6Type;
 use Programster\Nftables\Enums\IcmpxRejectCode;
-use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\IpsecDirection;
 use Programster\Nftables\Enums\IpsecKey;
 use Programster\Nftables\Enums\Ipv6ExtensionHeader;
 use Programster\Nftables\Enums\Ipv6ExtensionHeaderField;
+use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Enums\LimitMatch;
 use Programster\Nftables\Enums\LimitPeriod;
 use Programster\Nftables\Enums\LimitUnit;
@@ -83,22 +84,25 @@ use Programster\Nftables\Expressions\SetExpression;
 use Programster\Nftables\Expressions\SocketExpression;
 use Programster\Nftables\Expressions\TcpOptionExpression;
 use Programster\Nftables\Expressions\TimedElement;
-use Programster\Nftables\MapElement;
-use Programster\Nftables\MatchFactory;
-use Programster\Nftables\NamedMap;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\NamedVerdictMap;
+use Programster\Nftables\Helpers\MatchFactory;
+use Programster\Nftables\Helpers\RuleFactory;
+use Programster\Nftables\Maps\AnonymousMap;
+use Programster\Nftables\Maps\AnonymousVerdictMap;
+use Programster\Nftables\Maps\MapElement;
+use Programster\Nftables\Maps\NamedMap;
+use Programster\Nftables\Maps\NamedVerdictMap;
+use Programster\Nftables\Maps\VerdictMapElement;
 use Programster\Nftables\Objects\CtHelper;
 use Programster\Nftables\Objects\NamedCounter;
 use Programster\Nftables\Objects\NamedLimit;
 use Programster\Nftables\Objects\NamedQuota;
-use Programster\Nftables\PortForward;
-use Programster\Nftables\PortRange;
-use Programster\Nftables\PortSet;
-use Programster\Nftables\RegularChain;
-use Programster\Nftables\Rule;
-use Programster\Nftables\RuleFactory;
+use Programster\Nftables\Rules\PortForward;
+use Programster\Nftables\Rules\Rule;
 use Programster\Nftables\Ruleset;
+use Programster\Nftables\Sets\ConnectionStateSet;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Sets\PortRange;
+use Programster\Nftables\Sets\PortSet;
 use Programster\Nftables\Statements\ConnectionLimitStatement;
 use Programster\Nftables\Statements\CounterStatement;
 use Programster\Nftables\Statements\DnatStatement;
@@ -119,8 +123,7 @@ use Programster\Nftables\Statements\RejectStatement;
 use Programster\Nftables\Statements\SetUpdateStatement;
 use Programster\Nftables\Statements\SnatStatement;
 use Programster\Nftables\Statements\Statement;
-use Programster\Nftables\Table;
-use Programster\Nftables\VerdictMapElement;
+use Programster\Nftables\Tables\Table;
 use Programster\Nftables\Testing\Fixtures;
 use Programster\Nftables\Testing\NftNamespace;
 use Programster\Nftables\Testing\SmokeTestRunner;
@@ -146,8 +149,7 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
 
     // Load some rules, and check nft lists each of them as expected.
     $assertRulesLoadAs = function (array $expectedLines, Rule ...$rules) use ($assertLoadsAs) : void {
-        $ruleset = new Ruleset(TestTarget::detect());
-        $ruleset->addRule(...$rules);
+        $ruleset = new Ruleset(new RuleCollection(...$rules), TestTarget::detect());
         $assertLoadsAs($ruleset, ...$expectedLines);
     };
 
@@ -167,6 +169,16 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
         return new BaseChain($name, $table, $type, $hook, $priority, Policy::ACCEPT, $device);
     };
 
+    $emptyChain = function (
+        string $name,
+        Table $table,
+        ChainType $type,
+        ChainHook $hook,
+        int|Priority $priority,
+    ) : EmptyChain {
+        return new EmptyChain($name, $table, $type, $hook, $priority, Policy::ACCEPT);
+    };
+
     $ipTable = Fixtures::createTable("t", Family::IP);
     $ip6Table = Fixtures::createTable("t", Family::IP6);
     $inetTable = Fixtures::createTable("t", Family::INET);
@@ -182,17 +194,22 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
 
     # Tables and chains
 
-    $testTablesAndChains = function () use ($assertLoadsAs, $chain, $ipTable) : void {
+    $testTablesAndChains = function () use ($assertLoadsAs, $emptyChain, $ipTable) : void {
         $other = new Table("other", Family::INET);
-        $ruleset = new Ruleset(TestTarget::detect());
-        $ruleset->addChain(new BaseChain("in", $other, ChainType::FILTER, ChainHook::INPUT, 10, Policy::DROP));
-        $ruleset->addChain($chain("raw", $ipTable, ChainType::FILTER, ChainHook::PREROUTING, Priority::RAW));
-        $ruleset->addChain($chain("rt", $ipTable, ChainType::ROUTE, ChainHook::OUTPUT, Priority::MANGLE));
-        $ruleset->addChain($chain("sn", $ipTable, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT));
-        $ruleset->addChain($chain("dn", $ipTable, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT));
-        $ruleset->addChain($chain("sec", $ipTable, ChainType::FILTER, ChainHook::INPUT, Priority::SECURITY));
-        $ruleset->addChain($chain("custom", $ipTable, ChainType::FILTER, ChainHook::INPUT, -7));
-        $ruleset->addChain(new RegularChain("plain", $ipTable));
+
+        $chains = new EmptyChainCollection(
+            new EmptyChain("in", $other, ChainType::FILTER, ChainHook::INPUT, 10, Policy::DROP),
+            $emptyChain("raw", $ipTable, ChainType::FILTER, ChainHook::PREROUTING, Priority::RAW),
+            $emptyChain("rt", $ipTable, ChainType::ROUTE, ChainHook::OUTPUT, Priority::MANGLE),
+            $emptyChain("sn", $ipTable, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT),
+            $emptyChain("dn", $ipTable, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT),
+            $emptyChain("sec", $ipTable, ChainType::FILTER, ChainHook::INPUT, Priority::SECURITY),
+            $emptyChain("custom", $ipTable, ChainType::FILTER, ChainHook::INPUT, -7),
+        );
+
+        // A regular chain only comes into a ruleset with a rule, as it does nothing without one.
+        $regularChainRule = Rule::create(new RegularChain("plain", $ipTable), Verdict::ACCEPT);
+        $ruleset = new Ruleset(new RuleCollection($regularChainRule), TestTarget::detect(), emptyChains: $chains);
 
         // nft quietly turns a base chain it can't read into a regular one, so check every one kept its hook.
         $assertLoadsAs(
@@ -211,13 +228,17 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
 
     $smoke->run("nft: tables, base chains (every type and priority) and regular chains load", $testTablesAndChains);
 
-    $testOtherFamilies = function () use ($assertLoadsAs, $chain) : void {
+    $testOtherFamilies = function () use ($assertLoadsAs, $emptyChain) : void {
         $bridge = new Table("br", Family::BRIDGE);
         $arp = new Table("arp", Family::ARP);
-        $ruleset = new Ruleset(TestTarget::detect());
-        $ruleset->addChain($chain("f", $bridge, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER));
-        $ruleset->addChain($chain("o", $bridge, ChainType::FILTER, ChainHook::OUTPUT, Priority::OUT));
-        $ruleset->addChain($chain("i", $arp, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER));
+
+        $chains = new EmptyChainCollection(
+            $emptyChain("f", $bridge, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER),
+            $emptyChain("o", $bridge, ChainType::FILTER, ChainHook::OUTPUT, Priority::OUT),
+            $emptyChain("i", $arp, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER),
+        );
+
+        $ruleset = new Ruleset(new RuleCollection(), TestTarget::detect(), emptyChains: $chains);
 
         $assertLoadsAs(
             $ruleset,
@@ -472,7 +493,7 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
         $blocklist = NamedSet::createAddressSet($ipTable, "blocklist", IpVersion::IPV4, ...$blocked);
         $blocklist6 = NamedSet::createAddressSet($ip6Table, "blocklist6", IpVersion::IPV6, "2001:db8::/32");
         $ports = NamedSet::createPortSet($ipTable, "ports", 22, new PortRange(8000, 8080));
-        $pairType = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+        $pairType = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
         $pairs = NamedSet::create($ipTable, "pairs", $pairType)->withElements(new ConcatExpression("10.0.0.1", 22));
         $expiring = NamedSet::create($ipTable, "expiring", SetType::IPV4_ADDR)->withElements("10.0.0.9");
         $expiring = $expiring->withTimeout(3600);
@@ -724,7 +745,7 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
         ];
 
         $services = NamedVerdictMap::create($ipTable, "services", SetType::INET_SERVICE)->withElements(...$elements);
-        $pairType = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+        $pairType = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
         $pair = new VerdictMapElement(new ConcatExpression("10.0.0.1", 22), Verdict::ACCEPT);
         $pairs = NamedVerdictMap::create($ipTable, "pairs", $pairType)->withElements($pair);
         $ranges = NamedVerdictMap::create($ipTable, "ranges", SetType::IPV4_ADDR, SetFlag::INTERVAL);
@@ -838,7 +859,7 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
     $testSetUpdates = function () use ($assertRulesLoadAs, $rule, $ipTable, $input) : void {
         $saddr = PayloadExpression::create(PayloadField::IP_SADDR);
         $knocked = NamedSet::create($ipTable, "knocked", SetType::IPV4_ADDR)->withTimeout(30)->withSize(1000);
-        $pairType = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+        $pairType = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
         $pairs = NamedSet::create($ipTable, "pairs", $pairType)->withTimeout(60)->withSize(10);
         // Deleting doesn't need a size or timeout, as it can't fill the set.
         $permanent = NamedSet::create($ipTable, "permanent", SetType::IPV4_ADDR);
@@ -984,9 +1005,9 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
         $twoMaps = PortForwardMapLayout::TWO_MAPS;
         $trusted = NamedSet::createAddressSet($ipTable, "trusted", IpVersion::IPV4, "198.51.100.0/24");
         $sshForwards = [new PortForward(2222, "10.0.0.2", 22), new PortForward(2223, "10.0.0.5", 22)];
-        $ssh = new PortForwardCollection($sshForwards);
-        $games = new PortForwardCollection([new PortForward(27015, "10.0.0.6", 27015)]);
-        $ipv6 = new PortForwardCollection([new PortForward(8080, "fd00::3", 80)]);
+        $ssh = new PortForwardCollection(...$sshForwards);
+        $games = new PortForwardCollection(new PortForward(27015, "10.0.0.6", 27015));
+        $ipv6 = new PortForwardCollection(new PortForward(8080, "fd00::3", 80));
         $wanAddress = "203.0.113.1";
         $ipv4 = IpVersion::IPV4;
         $none = new PortForwardCollection();
@@ -1128,6 +1149,32 @@ $registerFeatureTests = function (NftNamespace $nft) use ($smoke) : void {
     };
 
     $smoke->run("nft: masquerading one IP version loads", $testMasqueradeIpVersion);
+
+    $testMasqueradeAddresses = function () use ($assertRulesLoadAs, $postrouting) : void {
+        $hairpin = RuleFactory::createMasquerade(
+            $postrouting,
+            "eth1",
+            sourceAddress: "10.0.0.0/24",
+            destinationAddress: "10.0.0.0/24",
+            comment: "Hairpin NAT",
+        );
+
+        $rules = [
+            $hairpin,
+            RuleFactory::createMasquerade($postrouting, "eth0", sourceAddress: "10.0.0.5"),
+            RuleFactory::createMasquerade($postrouting, "eth0", IpVersion::IPV4, destinationAddress: "192.0.2.0/24"),
+        ];
+
+        $expected = [
+            'oifname "eth1" ip saddr 10.0.0.0/24 ip daddr 10.0.0.0/24 masquerade comment "Hairpin NAT"',
+            'oifname "eth0" ip saddr 10.0.0.5 masquerade',
+            'oifname "eth0" ip daddr 192.0.2.0/24 masquerade',
+        ];
+
+        $assertRulesLoadAs($expected, ...$rules);
+    };
+
+    $smoke->run("nft: masquerading only some addresses loads", $testMasqueradeAddresses);
 };
 
 try

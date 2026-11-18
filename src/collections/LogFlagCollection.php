@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
+use Programster\Collections\AbstractReadonlyCollection;
 use Programster\Nftables\Enums\LogFlag;
-use Ramsey\Collection\AbstractCollection;
 
 /**
- * A list of the extra information a log statement includes. Anything that isn't a LogFlag is rejected as it's added.
+ * A list of the extra information a log statement includes. It can't be changed once it's created, so it can be shared
+ * freely.
  *
- * @extends AbstractCollection<LogFlag>
+ * @extends AbstractReadonlyCollection<LogFlag>
  */
-final class LogFlagCollection extends AbstractCollection
+final readonly class LogFlagCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of the extra information a log statement includes.
+     * @param LogFlag ...$flags - the extra information to log. There can be none.
+     */
+    public function __construct(LogFlag ...$flags)
     {
-        return LogFlag::class;
+        parent::__construct(...$flags);
     }
 }

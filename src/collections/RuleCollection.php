@@ -4,18 +4,23 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Collections;
 
-use Programster\Nftables\Rule;
-use Ramsey\Collection\AbstractCollection;
+use Programster\Collections\AbstractReadonlyCollection;
+use Programster\Nftables\Rules\Rule;
 
 /**
- * A list of rules, in the order they're evaluated. Anything that isn't a Rule is rejected as it's added.
+ * A list of rules, in the order they're evaluated, e.g. for a Ruleset. It can't be changed once it's created, so it can
+ * be shared freely.
  *
- * @extends AbstractCollection<Rule>
+ * @extends AbstractReadonlyCollection<Rule>
  */
-final class RuleCollection extends AbstractCollection
+final readonly class RuleCollection extends AbstractReadonlyCollection
 {
-    public function getType() : string
+    /**
+     * Create a list of rules, in the order they're evaluated.
+     * @param Rule ...$rules - the rules, in the order they're evaluated. There can be none.
+     */
+    public function __construct(Rule ...$rules)
     {
-        return Rule::class;
+        parent::__construct(...$rules);
     }
 }

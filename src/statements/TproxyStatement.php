@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
-use Programster\Nftables\ChainLib;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Enums\ChainHook;
 use Programster\Nftables\Enums\ChainType;
 use Programster\Nftables\Enums\Family;
@@ -13,7 +12,8 @@ use Programster\Nftables\Enums\IpVersion;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Exceptions\InvalidAddressException;
 use Programster\Nftables\Exceptions\UnsuitableChainException;
-use Programster\Nftables\NetworkLib;
+use Programster\Nftables\Helpers\NetworkLib;
+use Programster\Nftables\Internal\ChainLib;
 
 /**
  * Sends the packet to a local socket (a transparent proxy) without changing its destination, so the proxy can see where

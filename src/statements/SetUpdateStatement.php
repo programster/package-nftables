@@ -9,11 +9,11 @@ use Programster\Nftables\Collections\TableItemCollection;
 use Programster\Nftables\Enums\SetUpdateOperation;
 use Programster\Nftables\Exceptions\BadArgumentException;
 use Programster\Nftables\Expressions\Expression;
-use Programster\Nftables\Expressions\ExpressionLib;
 use Programster\Nftables\Expressions\TimedElement;
-use Programster\Nftables\NamedSet;
-use Programster\Nftables\ReferencesTableItems;
-use Programster\Nftables\TableItemLib;
+use Programster\Nftables\Internal\ExpressionLib;
+use Programster\Nftables\Internal\TableItemLib;
+use Programster\Nftables\Sets\NamedSet;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Adds a value from the packet to a named set, updates it, or deletes it, as packets arrive, e.g. to remember the
@@ -115,7 +115,7 @@ final readonly class SetUpdateStatement implements Statement, ReferencesTableIte
         $this->m_operation = $operation;
         $this->m_set = $set;
         $this->m_element = $element;
-        $this->m_statements = new StatementCollection(array_values($statements));
+        $this->m_statements = new StatementCollection(...array_values($statements));
     }
 
 
@@ -144,7 +144,6 @@ final readonly class SetUpdateStatement implements Statement, ReferencesTableIte
     public function getReferencedItems() : TableItemCollection
     {
         $items = TableItemLib::collectReferences($this->m_element);
-        $items->add($this->m_set);
-        return $items;
+        return $items->merge(new TableItemCollection($this->m_set));
     }
 }

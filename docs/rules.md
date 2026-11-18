@@ -13,10 +13,10 @@
   - [Spotting spoofed packets](#spotting-spoofed-packets)
   - [MSS clamping](#mss-clamping)
   - [Flow offloading](#flow-offloading)
+  - [Limiting connections per source](#limiting-connections-per-source)
 - [MatchFactory](#matchfactory)
 
-The examples leave out `use` statements. Every class is in `Programster\Nftables`, or one of its `Enums`,
-`Statements`, `Expressions` and `Exceptions` namespaces.
+The examples leave out `use` statements. See [namespaces](getting-started.md#namespaces) for where each class is.
 
 ## Rules
 A rule is a list of [statements](statements.md), applied to each packet in order. A match that the packet doesn't
@@ -31,8 +31,8 @@ $isHttps = MatchFactory::createDestinationPorts(Protocol::TCP, 443);
 $fromOffice = MatchFactory::createSourceAddress("198.51.100.0/24");
 $rule = Rule::create($input, $isHttps, $fromOffice, new CounterStatement(), Verdict::ACCEPT);
 
-$ruleset = new Ruleset();
-$ruleset->addRule($rule->withComment("HTTPS from the office"));
+$rules = new RuleCollection($rule->withComment("HTTPS from the office"));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -60,7 +60,6 @@ $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Pri
 $forward = new BaseChain("forward", $table, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::DROP);
 $prerouting = new BaseChain("prerouting", $table, ChainType::NAT, ChainHook::PREROUTING, Priority::DSTNAT, Policy::ACCEPT);
 $postrouting = new BaseChain("postrouting", $table, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
-$ruleset = new Ruleset();
 ```
 
 ### Accepting an interface
@@ -68,8 +67,13 @@ $ruleset = new Ruleset();
 
 ```php
 $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
-$ruleset->addRule(RuleFactory::createAcceptInterface($input, "lo"));
-$ruleset->addRule(RuleFactory::createAcceptInterface($input, "eth0", $replies, "replies to our own connections"));
+
+$rules = new RuleCollection(
+    RuleFactory::createAcceptInterface($input, "lo"),
+    RuleFactory::createAcceptInterface($input, "eth0", $replies, "replies to our own connections"),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -83,9 +87,13 @@ machine. It can also check where the traffic comes from, which of the machine's 
 connection state:
 
 ```php
-$ruleset->addRule(RuleFactory::createAcceptPort($input, "eth0", new PortSet(80, 443)));
-$ruleset->addRule(RuleFactory::createAcceptPort($input, "eth0", 22, sourceAddress: "198.51.100.0/24"));
-$ruleset->addRule(RuleFactory::createAcceptPort($input, "eth0", 51820, Protocol::UDP, destinationAddress: "203.0.113.1"));
+$rules = new RuleCollection(
+    RuleFactory::createAcceptPort($input, "eth0", new PortSet(80, 443)),
+    RuleFactory::createAcceptPort($input, "eth0", 22, sourceAddress: "198.51.100.0/24"),
+    RuleFactory::createAcceptPort($input, "eth0", 51820, Protocol::UDP, destinationAddress: "203.0.113.1"),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -99,8 +107,12 @@ iifname "eth0" udp dport 51820 ip daddr 203.0.113.1 accept
 this one. Its new destination port defaults to the port it arrived on:
 
 ```php
-$ruleset->addRule(RuleFactory::createPortForward($prerouting, "eth0", 8443, "10.0.0.10", 443));
-$ruleset->addRule(RuleFactory::createPortForward($prerouting, "eth0", new PortRange(5000, 5100), "10.0.0.11", protocol: Protocol::UDP));
+$rules = new RuleCollection(
+    RuleFactory::createPortForward($prerouting, "eth0", 8443, "10.0.0.10", 443),
+    RuleFactory::createPortForward($prerouting, "eth0", new PortRange(5000, 5100), "10.0.0.11", protocol: Protocol::UDP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -122,8 +134,13 @@ allowlist), and a forward can be added or removed at runtime with `nft add eleme
 is a `PortForward` of an incoming port, an address and a port, in a `PortForwardCollection`:
 
 ```php
-$forwards = new PortForwardCollection([new PortForward(2222, "10.0.0.2", 22), new PortForward(8080, "10.0.0.3", 80)]);
-$ruleset->addRule(RuleFactory::createMapPortForward($prerouting, "eth0", "forwards", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $forwards));
+$forwards = new PortForwardCollection(new PortForward(2222, "10.0.0.2", 22), new PortForward(8080, "10.0.0.3", 80));
+
+$rules = new RuleCollection(
+    RuleFactory::createMapPortForward($prerouting, "eth0", "forwards", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $forwards),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -163,8 +180,13 @@ E.g. for forwards that only a few trusted addresses can use, alongside the publi
 
 ```php
 $trusted = NamedSet::createAddressSet($table, "trusted", IpVersion::IPV4, "198.51.100.7", "203.0.113.0/24");
-$private = new PortForwardCollection([new PortForward(22, "10.0.0.4", 22)]);
-$ruleset->addRule(RuleFactory::createMapPortForward($prerouting, "eth0", "private", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $private, allowedSources: $trusted));
+$private = new PortForwardCollection(new PortForward(22, "10.0.0.4", 22));
+
+$rules = new RuleCollection(
+    RuleFactory::createMapPortForward($prerouting, "eth0", "private", PortForwardMapLayout::TWO_MAPS, IpVersion::IPV4, $private, allowedSources: $trusted),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -181,7 +203,8 @@ so a forward chain with a drop policy lets them through without a rule for each.
 chain chose to forward, so it doesn't open anything else:
 
 ```php
-$ruleset->addRule(RuleFactory::createAcceptPortForwards($forward));
+$rules = new RuleCollection(RuleFactory::createAcceptPortForwards($forward));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -195,9 +218,14 @@ that's usually the new connections going in, and the replies to them:
 ```php
 $new = new ConnectionStateSet(ConnectionState::NEW);
 $replies = new ConnectionStateSet(ConnectionState::ESTABLISHED, ConnectionState::RELATED);
-$ruleset->addRule(RuleFactory::createForward($forward, "eth0", "eth1", $new, destinationPorts: 443, destinationAddress: "10.0.0.10", requireTcpSyn: true));
-$ruleset->addRule(RuleFactory::createForward($forward, "eth0", "eth1", $replies));
-$ruleset->addRule(RuleFactory::createForward($forward, "eth1", "eth0"));
+
+$rules = new RuleCollection(
+    RuleFactory::createForward($forward, "eth0", "eth1", $new, destinationPorts: 443, destinationAddress: "10.0.0.10", requireTcpSyn: true),
+    RuleFactory::createForward($forward, "eth0", "eth1", $replies),
+    RuleFactory::createForward($forward, "eth1", "eth0"),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -215,7 +243,8 @@ protocol.
 reach the internet through its address:
 
 ```php
-$ruleset->addRule(RuleFactory::createMasquerade($postrouting, "eth0"));
+$rules = new RuleCollection(RuleFactory::createMasquerade($postrouting, "eth0"));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -228,7 +257,9 @@ own, so their IPv6 traffic should be routed rather than NATed, pass `IpVersion::
 ```php
 $dualStack = new Table("dual_stack", Family::INET);
 $dualStackPostrouting = new BaseChain("postrouting", $dualStack, ChainType::NAT, ChainHook::POSTROUTING, Priority::SRCNAT, Policy::ACCEPT);
-$ruleset->addRule(RuleFactory::createMasquerade($dualStackPostrouting, "eth0", IpVersion::IPV4));
+
+$rules = new RuleCollection(RuleFactory::createMasquerade($dualStackPostrouting, "eth0", IpVersion::IPV4));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -237,6 +268,24 @@ oifname "eth0" meta nfproto ipv4 masquerade
 
 In an `ip` or `ip6` table, it's only ever that table's version, so passing the other one throws an
 `UnsuitableChainException`.
+
+To only masquerade some traffic, pass `$sourceAddress`, `$destinationAddress` or both (each an IP address or network
+CIDR). With the LAN's network as both, on the LAN interface, it's a hairpin NAT: machines on the LAN can then reach
+each other through a port forward at the public address, as the replies come back through this machine, rather than
+straight from the other machine, which the one that connected would ignore. A port forward for the LAN's traffic
+needs a rule of its own, on the LAN interface, as `createPortForward()` only matches the interface it's given.
+
+```php
+$rules = new RuleCollection(
+    RuleFactory::createMasquerade($postrouting, "eth1", sourceAddress: "10.0.0.0/24", destinationAddress: "10.0.0.0/24"),
+);
+
+$ruleset = new Ruleset($rules);
+```
+
+```nft
+oifname "eth1" ip saddr 10.0.0.0/24 ip daddr 10.0.0.0/24 masquerade
+```
 
 ### Accepting essential ICMPv6
 IPv6 can't work without some ICMPv6 messages, which [RFC 4890](https://www.rfc-editor.org/rfc/rfc4890) says a
@@ -248,8 +297,13 @@ policy that IPv6 passes through needs one:
 ```php
 $dualStackInput = new BaseChain("input", $dualStack, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
 $dualStackForward = new BaseChain("forward", $dualStack, ChainType::FILTER, ChainHook::FORWARD, Priority::FILTER, Policy::DROP);
-$ruleset->addRule(RuleFactory::createAcceptEssentialIcmpv6($dualStackInput));
-$ruleset->addRule(RuleFactory::createAcceptEssentialIcmpv6($dualStackForward));
+
+$rules = new RuleCollection(
+    RuleFactory::createAcceptEssentialIcmpv6($dualStackInput),
+    RuleFactory::createAcceptEssentialIcmpv6($dualStackForward),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -265,7 +319,11 @@ icmpv6 type { destination-unreachable, packet-too-big, time-exceeded, parameter-
 Pings aren't included. To accept those too, match them with `MatchFactory::createIcmpv6Types()`:
 
 ```php
-$ruleset->addRule(Rule::create($dualStackInput, MatchFactory::createIcmpv6Types(Icmpv6Type::ECHO_REQUEST), Verdict::ACCEPT));
+$rules = new RuleCollection(
+    Rule::create($dualStackInput, MatchFactory::createIcmpv6Types(Icmpv6Type::ECHO_REQUEST), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -282,7 +340,9 @@ spotted. It belongs early on, in a filter chain on the prerouting hook:
 
 ```php
 $early = new BaseChain("early", $table, ChainType::FILTER, ChainHook::PREROUTING, Priority::RAW, Policy::ACCEPT);
-$ruleset->addRule(RuleFactory::createReversePathFilter($early));
+
+$rules = new RuleCollection(RuleFactory::createReversePathFilter($early));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -298,7 +358,8 @@ the MTU of their route. Without it, connections through a link with a smaller MT
 can hang as soon as they send a full sized packet:
 
 ```php
-$ruleset->addRule(RuleFactory::createMssClamp($forward));
+$rules = new RuleCollection(RuleFactory::createMssClamp($forward));
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -310,13 +371,59 @@ tcp flags syn tcp option maxseg size set rt mtu
 makes forwarding much cheaper. Flowtables need nft 1.0.6, so the ruleset needs a target that has it:
 
 ```php
-$ruleset = new Ruleset(NftablesTarget::DEBIAN_12);
-$ruleset->addRule(RuleFactory::createFlowOffload($forward, new Flowtable("fastpath", $table, Priority::FILTER, "eth0", "eth1")));
+$rules = new RuleCollection(
+    RuleFactory::createFlowOffload($forward, new Flowtable("fastpath", $table, Priority::FILTER, "eth0", "eth1")),
+);
+
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
 ```
 
 ```nft
 meta l4proto { tcp, udp } flow add @fastpath
 ```
+
+### Limiting connections per source
+`createPerSourceConnectionLimits()` limits the connections each source address can make to a server, so no one client
+can use up the server's connections (e.g. by opening many and leaving them idle), or flood it with new ones, while
+the other clients are unaffected. It gives two rules, as a `RuleCollection`: one drops the new connections of any
+address over the rate, and the other rejects those of any address that already has the most open at once (with a TCP
+reset, for TCP, so the client knows straight away). E.g. for a mail server behind this machine, with its SMTP ports
+port forwarded to it, at most 10 open at once, and 60 new a minute, from each address on the internet:
+
+```php
+$limits = RuleFactory::createPerSourceConnectionLimits(
+    $forward,
+    "eth0",
+    "smtp",
+    "10.0.0.25",
+    new PortSet(465, 587),
+    maxConnections: 10,
+    maxNewConnections: 60,
+    newConnectionPeriod: LimitPeriod::MINUTE,
+);
+
+$rules = $limits->merge(new RuleCollection(RuleFactory::createAcceptPortForwards($forward)));
+$ruleset = new Ruleset($rules, NftablesTarget::DEBIAN_12);
+```
+
+```nft
+iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new update @smtp_rate { ip saddr limit rate over 60/minute burst 60 packets } drop
+iifname "eth0" ip daddr 10.0.0.25 tcp dport { 465, 587 } ct state new add @smtp_connections { ip saddr ct count over 10 } reject with tcp reset
+ct status dnat accept
+```
+
+- **They don't accept anything**, so they go before whatever does, like `createAcceptPortForwards()` here. A
+  `RuleCollection` can't be unpacked into another's constructor with more rules after it, so use `merge()`.
+- **In a forward chain, they match the server's own address and port**, as a port forward has already changed them by
+  then. In an input chain, they're for a server on this machine.
+- **Only traffic arriving on the interface given is limited**, so e.g. machines on the LAN aren't.
+- **The burst is the same as the rate**, so a client can open all of its new connections at once (many mail libraries
+  open one per email), rather than having to spread them out.
+- **Each address is tracked in two named sets**, `<name>_rate` and `<name>_connections`, so the name must be unique in
+  the table. They hold at most 65535 addresses each (`maxSources`). Once they're full, new addresses' connections are
+  refused until old ones expire, so make it comfortably bigger than the number of clients.
+- **It needs nft 1.0.6** (e.g. Debian 12), as older nft silently drops per-address limits, so the ruleset needs a
+  target of at least that.
 
 ## MatchFactory
 `MatchFactory` creates the common [matches](statements.md#matches). The ones that take a `MatchMode` can be negated
@@ -342,9 +449,12 @@ $table = new Table("firewall", Family::INET);
 $input = new BaseChain("input", $table, ChainType::FILTER, ChainHook::INPUT, Priority::FILTER, Policy::DROP);
 $invalid = new ConnectionStateSet(ConnectionState::INVALID);
 
-$ruleset = new Ruleset();
-$ruleset->addRule(Rule::create($input, MatchFactory::createConnectionStates($invalid), Verdict::DROP));
-$ruleset->addRule(Rule::create($input, MatchFactory::createSourceAddress("fd00::/8", MatchMode::DOES_NOT_MATCH), Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createConnectionStates($invalid), Verdict::DROP),
+    Rule::create($input, MatchFactory::createSourceAddress("fd00::/8", MatchMode::DOES_NOT_MATCH), Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft

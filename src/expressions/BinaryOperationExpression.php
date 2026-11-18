@@ -6,6 +6,7 @@ namespace Programster\Nftables\Expressions;
 
 use Programster\Nftables\Enums\BinaryOperator;
 use Programster\Nftables\Exceptions\BadArgumentException;
+use Programster\Nftables\Internal\ExpressionLib;
 
 /**
  * A bitwise operation on values, e.g. tcp flags & (fin | syn | rst | ack), to check only some of the flags.

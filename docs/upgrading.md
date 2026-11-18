@@ -34,22 +34,31 @@ differently. Read those first.
 - **Rulesets have a target.** A `Ruleset` refuses anything its [target](targets.md) can't load. The default is the
   oldest supported nft (0.9.8), which everything 0.x could do still works on, so pass a target only to use the few
   features that need a newer one.
+- **Collections can't be changed.** The typed collections (e.g. `Collections\SetTypeCollection`) are readonly, from
+  [programster/collections](https://github.com/programster/package-collections). They take their elements as
+  arguments, e.g. `new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE)`, and have no `add()`. Use
+  `merge()` to get a new collection with more elements.
 
 ## Renamed classes
+1.0's classes are grouped into namespaces under `Programster\Nftables` (see
+[namespaces](getting-started.md#namespaces)), so the names below include them, e.g. `Tables\Table` is
+`Programster\Nftables\Tables\Table`. Only `Ruleset` is at the top.
+
 | 0.x | 1.0 |
 |---|---|
-| `NftablesTable` | `Table` (same arguments) |
-| `NftablesChain` | `BaseChain` (same arguments, and the priority can now be any integer) |
-| `NftablesRule` | `Rule::create()` (takes `Statement`s, see above) |
-| `NftablesRuleset` | `Ruleset`, whose first parameter is now the [target](targets.md), so pass the reset mode by name (`new Ruleset(resetMode: ...)`) or second |
+| `NftablesTable` | `Tables\Table` (same arguments) |
+| `NftablesChain` | `Chains\BaseChain` (same arguments, and the priority can now be any integer) |
+| `NftablesRule` | `Rules\Rule::create()` (takes `Statement`s, see above) |
+| `NftablesRuleset` | `Ruleset`, which is now readonly: everything goes to its constructor, `new Ruleset($rules, $target, $resetMode, $emptyChains, $emptyTables)`, so pass the reset mode by name (`resetMode: ...`) or third. See [building a ruleset](rulesets.md#building-a-ruleset). |
+| `NftablesRuleset::addRule(...$rules)`, `addTable()` and `addChain()` | The constructor's `$rules` (a `Collections\RuleCollection`). Rules bring their chains, and chains their tables, so `addChain()` is only needed for a base chain with no rules (`$emptyChains`), and `addTable()` for an empty table (`$emptyTables`). |
 | `NftablesMatch` | `Statements\MatchStatement` (the left side must now be an `Expression`) |
-| `NftablesConnectionStateCollection` | `ConnectionStateSet` |
-| `NftablesRuleFactory` | `RuleFactory` (see below) |
-| `NftablesMatchFactory` | `MatchFactory` (see below) |
+| `NftablesConnectionStateCollection` | `Sets\ConnectionStateSet` |
+| `NftablesRuleFactory` | `Helpers\RuleFactory` (see below) |
+| `NftablesMatchFactory` | `Helpers\MatchFactory` (see below) |
 | `NftablesLib::createDnat()` | `Statements\DnatStatement::create($address, $port)` |
 | `NftablesLib::createMetaInfoBlock()` | Removed: `Ruleset` adds it |
-| `NftablesLib::isValidCidr()`, `isValidNetworkCidr()` | `NetworkLib::isValidCidr()`, `isValidNetworkCidr()` |
-| `PortRange::$minPort`, `$maxPort` | `PortRange::getMinPort()`, `getMaxPort()` |
+| `NftablesLib::isValidCidr()`, `isValidNetworkCidr()` | `Helpers\NetworkLib::isValidCidr()`, `isValidNetworkCidr()` |
+| `PortRange::$minPort`, `$maxPort` | `Sets\PortRange::getMinPort()`, `getMaxPort()` |
 
 ## Renamed enums
 | 0.x | 1.0 |
@@ -101,7 +110,7 @@ The chain always comes first now, and the parameters have clearer names, which m
 | `createPortForwardNatRule($preroutingChain, $inputInterfaceName, $inputPort, $newDestIp, $newDestPort, $protocol, $sourceIpCidr, $destIpCidr, $comment)` | `createPortForward($preroutingChain, $inputInterfaceName, $incomingPorts, $newDestinationAddress, $newDestinationPorts, $protocol, $sourceAddress, $destinationAddress, $comment)` |
 | `createPortRangeForwardNatRule($preroutingChain, $inputInterfaceName, $inputPorts, $newDestIp, $destPorts, $protocol, $sourceIpCidr, $comment)` | `createPortForward()`, with `PortRange`s. The new ports can be left out, to keep each packet's port. |
 | `createForwardingRule($forwardFilteringChain, $inputInterface, $outputInterface, $checkForSynPacketType, $allowedStates, $protocol, $destPort, $sourceIpOrCidr, $destIpOrCidr, $comment)` | `createForward($forwardChain, $inputInterfaceName, $outputInterfaceName, $states, $protocol, $destinationPorts, $sourceAddress, $destinationAddress, $requireTcpSyn, $comment)`. The SYN check is now an optional named parameter near the end. |
-| `createMasquerade($postRoutingChain, $outputInterfaceName, $comment)` | `createMasquerade($postroutingChain, $outputInterfaceName, $ipVersion, $comment)`. A comment passed by position now goes fourth, or by name. |
+| `createMasquerade($postRoutingChain, $outputInterfaceName, $comment)` | `createMasquerade($postroutingChain, $outputInterfaceName, $ipVersion, $sourceAddress, $destinationAddress, $comment)`. A comment passed by position now goes sixth, so pass it by name. The addresses can make it a [hairpin NAT](rules.md#masquerading). |
 
 `createPortForward()` now refuses to forward a range of ports to a different range, which nft can't do one to one, and
 `createForward()` refuses a SYN check on anything but TCP.
@@ -131,4 +140,5 @@ log, counter, limit, quota, connection limits, queue, notrack, marks, snat and r
 proxying, adding to sets from rules (meters), dup and fwd, existence checks, fib and rt lookups, sockets, IPsec,
 IPv6 extension headers, TCP options and SCTP chunks, number generators and hashes, OS fingerprinting, and rules for
 spotting spoofed packets, clamping the MSS, offloading to a flowtable, port forwarding from a map, accepting port
-forwards and accepting essential ICMPv6. There are also complete [examples](examples.md).
+forwards, accepting essential ICMPv6 and [limiting connections per source](rules.md#limiting-connections-per-source).
+There are also complete [examples](examples.md).

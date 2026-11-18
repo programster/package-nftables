@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Programster\Nftables\Statements;
 
-use Programster\Nftables\BaseChain;
+use Programster\Nftables\Chains\BaseChain;
 use Programster\Nftables\Collections\TableItemCollection;
 use Programster\Nftables\Objects\NamedObject;
 use Programster\Nftables\Objects\NamedSynproxy;
-use Programster\Nftables\ReferencesTableItems;
+use Programster\Nftables\Tables\ReferencesTableItems;
 
 /**
  * Uses a named object for the packet: adds it to a NamedCounter, checks it against a NamedQuota or NamedLimit, passes
@@ -34,7 +34,7 @@ final readonly class NamedObjectStatement implements Statement, ReferencesTableI
 
     public function getReferencedItems() : TableItemCollection
     {
-        return new TableItemCollection([$this->m_object]);
+        return new TableItemCollection($this->m_object);
     }
 
 

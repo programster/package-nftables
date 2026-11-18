@@ -8,8 +8,8 @@
 
 A named set is a set of values (e.g. addresses to block) that lives in a table, alongside its chains. Unlike an
 [anonymous set](expressions.md#sets-ranges-and-prefixes), it can be shared by several rules, and its elements can be
-changed without reloading the rules. The examples leave out `use` statements. Every class is in
-`Programster\Nftables`, or one of its `Enums`, `Statements`, `Expressions` and `Exceptions` namespaces.
+changed without reloading the rules. The examples leave out `use` statements. See
+[namespaces](getting-started.md#namespaces) for where each class is.
 
 ## Creating a set
 The two most common kinds have their own creators, which always give the set the interval flag, so it can hold
@@ -35,9 +35,12 @@ $sourceAddress = PayloadExpression::create(PayloadField::IP_SADDR);
 $destinationPort = PayloadExpression::create(PayloadField::TCP_DPORT);
 $fromOffice = MatchFactory::createSourceAddress("198.51.100.0/24", MatchMode::DOES_NOT_MATCH);
 
-$ruleset = new Ruleset();
-$ruleset->addRule(Rule::create($input, MatchFactory::createInSet($sourceAddress, $blocklist), Verdict::DROP));
-$ruleset->addRule(Rule::create($input, MatchFactory::createInSet($destinationPort, $adminPorts), $fromOffice, Verdict::DROP));
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createInSet($sourceAddress, $blocklist), Verdict::DROP),
+    Rule::create($input, MatchFactory::createInSet($destinationPort, $adminPorts), $fromOffice, Verdict::DROP),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -63,16 +66,22 @@ only use a set in its own table, so using one from another table throws an `Unsu
 ## Other types of set
 Any other set is created with `NamedSet::create()`, from its table, name, `SetType` and any `SetFlag`s. Then
 `withElements()` gives a copy with its initial elements, and `withTimeout()` a copy whose elements expire after that
-many seconds:
+many seconds. As with any set, it's only included in a ruleset by a rule that uses it:
 
 ```php
 $trusted = NamedSet::create($table, "trusted", SetType::IFNAME)->withElements("eth1", "wg0");
 $recent = NamedSet::create($table, "recent", SetType::IPV4_ADDR)->withElements("10.0.0.9")->withTimeout(3600);
-$addressAndPort = new SetTypeCollection([SetType::IPV4_ADDR, SetType::INET_SERVICE]);
+$addressAndPort = new SetTypeCollection(SetType::IPV4_ADDR, SetType::INET_SERVICE);
 $pairs = NamedSet::create($table, "pairs", $addressAndPort)->withElements(new ConcatExpression("10.0.0.1", 22));
-$ruleset->addSet($trusted);
-$ruleset->addSet($recent);
-$ruleset->addSet($pairs);
+$sourceAndPort = new ConcatExpression($sourceAddress, $destinationPort);
+
+$rules = new RuleCollection(
+    Rule::create($input, MatchFactory::createInSet(new MetaExpression(MetaKey::IIFNAME), $trusted), Verdict::ACCEPT),
+    Rule::create($input, MatchFactory::createInSet($sourceAddress, $recent), Verdict::DROP),
+    Rule::create($input, MatchFactory::createInSet($sourceAndPort, $pairs), Verdict::ACCEPT),
+);
+
+$ruleset = new Ruleset($rules);
 ```
 
 ```nft
@@ -83,7 +92,8 @@ elements = { 10.0.0.1 . 22 }
 ```
 
 - A `SetTypeCollection` of several types makes a set of concatenations, e.g. address and port pairs, matched with a
-  `ConcatExpression`. The collection rejects anything that isn't a `SetType` as it's built.
+  `ConcatExpression`. It takes the types as arguments, so PHP rejects anything that isn't a `SetType` where it's
+  created.
 - `SetFlag::INTERVAL` is needed for a set holding ranges or prefixes. Adding one without it throws a
   `BadArgumentException`, rather than nft failing to load the ruleset later.
 - `withTimeout()` adds `SetFlag::TIMEOUT` itself, as nft needs it for a timeout.
@@ -100,7 +110,8 @@ elements make room for new ones:
 
 ```php
 $recentlySeen = NamedSet::create($table, "recently_seen", SetType::IPV4_ADDR)->withTimeout(300)->withSize(10000);
-$ruleset->addSet($recentlySeen);
+$remember = new SetUpdateStatement(SetUpdateOperation::UPDATE, $recentlySeen, $sourceAddress);
+$ruleset = new Ruleset(new RuleCollection(Rule::create($input, $remember)));
 ```
 
 ```nft
